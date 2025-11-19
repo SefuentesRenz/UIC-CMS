@@ -59,14 +59,7 @@
           </i>
           <span>Clinic Staff Users</span>
         </router-link>
-        <router-link to="/consultations" class="nav-item">
-          <i class="icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" fill="currentColor" />
-            </svg>
-          </i>
-          <span>Consultations</span>
-        </router-link>
+        
       </nav>
     </aside>
 
@@ -74,10 +67,7 @@
     <main class="main-content">
       <!-- Header -->
       <header class="header">
-        <div class="search-bar">
-          <i class="search-icon">🔍</i>
-          <input type="text" placeholder="Search..." v-model="searchQuery" />
-        </div>
+        
         <div class="user-profile" @click="showProfileModal = true" style="cursor: pointer;">
           <img src="@/assets/NurseProfile.jpg" alt="User Avatar" class="user-avatar" />
           <span class="user-greeting">Hi, <strong>{{ userName }}</strong></span>
@@ -180,6 +170,8 @@ export default {
   async created() {
     // Get initial user data
     await this.fetchUserData()
+    // Fetch real stats from database
+    await this.fetchStats()
   },
   data() {
     return {
@@ -187,10 +179,10 @@ export default {
       activeTab: 'patients',
       showProfileModal: false,
       stats: {
-        activePatients: 13,
-        staffUsers: 2,
-        medicine: 36,
-        transactions: 3
+        activePatients: 0,
+        staffUsers: 0,
+        medicine: 0,
+        transactions: 0
       },
       chart: null,
       userName: 'User',
@@ -224,6 +216,46 @@ export default {
         }
       } catch (err) {
         console.error('Error fetching user data:', err)
+      }
+    },
+    
+    async fetchStats() {
+      try {
+        // Fetch active patients count
+        const { count: patientsCount, error: patientsErr } = await supabase
+          .from('patients')
+          .select('*', { count: 'exact', head: true })
+        
+        if (patientsErr) throw patientsErr
+        this.stats.activePatients = patientsCount || 0
+
+        // Fetch staff users count (Nurse and Staff roles)
+        const { count: staffCount, error: staffErr } = await supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true })
+          .in('role', ['Nurse', 'Staff'])
+        
+        if (staffErr) throw staffErr
+        this.stats.staffUsers = staffCount || 0
+
+        // Fetch medicine count
+        const { count: medicineCount, error: medicineErr } = await supabase
+          .from('medicine')
+          .select('*', { count: 'exact', head: true })
+        
+        if (medicineErr) throw medicineErr
+        this.stats.medicine = medicineCount || 0
+
+        // Fetch transactions count
+        const { count: transactionsCount, error: transactionsErr } = await supabase
+          .from('transactions')
+          .select('*', { count: 'exact', head: true })
+        
+        if (transactionsErr) throw transactionsErr
+        this.stats.transactions = transactionsCount || 0
+
+      } catch (err) {
+        console.error('Error fetching stats:', err)
       }
     },
     
@@ -520,8 +552,10 @@ export default {
 
 .user-profile {
   display: flex;
+  justify-content: flex-end;
   align-items: center;
   gap: 12px;
+  margin-left: auto; /* push user profile to the right side of the header */
 }
 
 .user-avatar {

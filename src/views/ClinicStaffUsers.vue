@@ -56,14 +56,7 @@
           </i>
           <span>Clinic Staff Users</span>
         </router-link>
-        <router-link to="/consultations" class="nav-item">
-          <i class="icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" fill="currentColor" />
-            </svg>
-          </i>
-          <span>Consultations</span>
-        </router-link>
+       
       </nav>
     </aside>
 
@@ -71,10 +64,7 @@
     <main class="main-content">
       <!-- Header -->
       <header class="header">
-        <div class="search-bar">
-          <i class="search-icon">🔍</i>
-          <input type="text" placeholder="Search..." v-model="globalSearch" />
-        </div>
+        
         <div class="user-profile" @click="showProfileModal = true" style="cursor: pointer;">
           <img src="@/assets/NurseProfile.jpg" alt="Admin" class="user-avatar" />
           <span class="user-greeting">Hi, <strong>Admin</strong></span>
@@ -83,9 +73,6 @@
 
       <!-- Profile Modal -->
       <Profile :show="showProfileModal" @close="showProfileModal = false" />
-
-      <!-- Add Staff Modal -->
-      <AddStaff :show="showAddStaffModal" @close="showAddStaffModal = false" @add-staff="handleAddStaff" />
 
       <!-- Clinic Staff Users Content -->
       <div class="page-content">
@@ -108,14 +95,30 @@
         </div>
 
         <!-- Table Section -->
-        <div class="table-container">
+        <!-- Loading State -->
+        <div v-if="loading" class="loading-state" style="text-align: center; padding: 40px; color: #64748b;">
+          <div style="font-size: 48px; margin-bottom: 16px;">⏳</div>
+          <p style="font-size: 18px; font-weight: 600;">Loading staff members...</p>
+        </div>
+
+        <!-- Error State -->
+        <div v-else-if="error" class="error-state" style="text-align: center; padding: 40px; color: #ef4444;">
+          <div style="font-size: 48px; margin-bottom: 16px;">❌</div>
+          <p style="font-size: 18px; font-weight: 600;">Error loading staff</p>
+          <p style="color: #64748b; margin-top: 8px;">{{ error }}</p>
+          <button @click="getStaff" style="margin-top: 16px; padding: 10px 20px; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer;">
+            Retry
+          </button>
+        </div>
+
+        <div v-else class="table-container">
           <div class="table-controls">
             <div class="entries-control">
               <input type="checkbox" id="entries-checkbox" />
               <label for="entries-checkbox">Show entries</label>
             </div>
             <div class="results-info">
-              Showing {{ filteredStaff.length }} staff member{{ filteredStaff.length !== 1 ? 's' : '' }}
+              Showing {{ filteredStaff.length }} staff member{{ filteredStaff.length !== 1 ? 's' : '' }} (Nurse & Staff only)
             </div>
           </div>
 
@@ -133,7 +136,14 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="staff in filteredStaff" :key="staff.id">
+                <tr v-if="filteredStaff.length === 0">
+                  <td colspan="6" style="text-align: center; padding: 40px; color: #94a3b8;">
+                    <div style="font-size: 48px; margin-bottom: 12px;">👥</div>
+                    <p style="font-size: 16px; font-weight: 600;">No staff members found</p>
+                    <p style="font-size: 14px; margin-top: 8px;">Only Nurse and Staff roles are displayed here</p>
+                  </td>
+                </tr>
+                <tr v-for="staff in filteredStaff" :key="staff.id" v-else>
                   <td>
                     <div class="name-cell">
                       <img :src="staff.avatar" :alt="staff.name" class="staff-avatar" />
@@ -169,23 +179,144 @@
 </template>
 
 <script>
+import { ref, computed, onMounted } from 'vue'
+import { supabase } from '../supabaseClient'
 import Profile from '../components/Profile.vue'
-import AddStaff from '../components/AddStaff.vue'
 import NurseProfileImg from '@/assets/NurseProfile.jpg'
 
 export default {
   name: 'ClinicStaffUsersPage',
   components: {
     Profile,
-    AddStaff
+
+  },
+  setup() {
+    // Reactive state
+    const globalSearch = ref('')
+    const tableSearch = ref('')
+    const showProfileModal = ref(false)
+    const showAddStaffModal = ref(false)
+    const staff = ref([])
+    const loading = ref(false)
+    const error = ref(null)
+
+    // 🟢 FETCH STAFF FROM SUPABASE (Nurse and Staff roles only)
+    const getStaff = async () => {
+      console.log('=== FETCHING STAFF FROM SUPABASE ===')
+      loading.value = true
+      error.value = null
+
+      try {
+        // Fetch only users with role = 'Nurse' or 'Staff'
+        const { data, error: fetchError } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('role', ['Nurse', 'Staff'])
+          .order('full_name', { ascending: true })
+
+        if (fetchError) {
+          console.error('❌ Error fetching staff:', fetchError)
+          error.value = fetchError.message
+          throw fetchError
+        }
+
+        console.log(`✅ Successfully fetched ${data.length} staff members`)
+        console.table(data)
+        
+        // Transform data to match component structure
+        staff.value = data.map(user => ({
+          id: user.id,
+          avatar: NurseProfileImg, // Default avatar for now
+          name: user.full_name,
+          email: user.email,
+          role: user.role,
+          sex: user.sex || 'N/A',
+          status: user.status || 'Active'
+        }))
+      } catch (err) {
+        console.error('❌ Failed to fetch staff:', err)
+        alert(`Failed to fetch staff: ${err.message}`)
+      } finally {
+        loading.value = false
+      }
+    }
+
+    // Computed property for filtered staff
+    const filteredStaff = computed(() => {
+      let filtered = staff.value
+
+      // Filter by table search
+      if (tableSearch.value.trim()) {
+        const search = tableSearch.value.toLowerCase()
+        filtered = filtered.filter(s =>
+          s.name.toLowerCase().includes(search) ||
+          s.email.toLowerCase().includes(search) ||
+          s.role.toLowerCase().includes(search) ||
+          s.status.toLowerCase().includes(search)
+        )
+      }
+
+      return filtered
+    })
+
+    // Modal handlers
+    const addStaff = () => {
+      showAddStaffModal.value = true
+    }
+
+    const handleAddStaff = (newStaff) => {
+      // Add new staff to the list
+      const staffMember = {
+        id: staff.value.length + 1,
+        avatar: newStaff.profileFile ? URL.createObjectURL(newStaff.profileFile) : NurseProfileImg,
+        name: newStaff.name,
+        email: newStaff.email,
+        role: newStaff.role,
+        sex: 'N/A', // Can be added to form if needed
+        status: newStaff.status
+      }
+      staff.value.push(staffMember)
+      alert(`Staff user ${newStaff.name} has been added successfully!`)
+    }
+
+    const editStaff = (staffMember) => {
+      console.log('Edit staff:', staffMember)
+      alert(`Editing staff user: ${staffMember.name}`)
+      // TODO: Implement edit staff modal/form
+    }
+
+    const viewStaff = (staffMember) => {
+      console.log('View staff:', staffMember)
+      alert(`Viewing details for staff user: ${staffMember.name} - ${staffMember.role}`)
+      // TODO: Implement view staff details modal/page
+    }
+
+    // Fetch staff on component mount
+    onMounted(async () => {
+      console.log('=== CLINIC STAFF USERS COMPONENT MOUNTED ===')
+      await getStaff()
+    })
+
+    // Return everything for the template
+    return {
+      globalSearch,
+      tableSearch,
+      showProfileModal,
+      showAddStaffModal,
+      staff,
+      loading,
+      error,
+      filteredStaff,
+      getStaff,
+      addStaff,
+      handleAddStaff,
+      editStaff,
+      viewStaff
+    }
   },
   data() {
     return {
-      globalSearch: '',
-      tableSearch: '',
-      showProfileModal: false,
-      showAddStaffModal: false,
-      staff: [
+      staticFallback: [
         {
           id: 1,
           avatar: NurseProfileImg,
@@ -233,54 +364,8 @@ export default {
         }
       ]
     }
-  },
-  computed: {
-    filteredStaff() {
-      let filtered = this.staff
-
-      // Filter by table search
-      if (this.tableSearch.trim()) {
-        const search = this.tableSearch.toLowerCase()
-        filtered = filtered.filter(s => 
-          s.name.toLowerCase().includes(search) ||
-          s.email.toLowerCase().includes(search) ||
-          s.role.toLowerCase().includes(search) ||
-          s.status.toLowerCase().includes(search)
-        )
-      }
-
-      return filtered
-    }
-  },
-  methods: {
-    addStaff() {
-      this.showAddStaffModal = true
-    },
-    handleAddStaff(newStaff) {
-      // Add new staff to the list
-      const staffMember = {
-        id: this.staff.length + 1,
-        avatar: newStaff.profileFile ? URL.createObjectURL(newStaff.profileFile) : NurseProfileImg,
-        name: newStaff.name,
-        email: newStaff.email,
-        role: newStaff.role,
-        sex: 'N/A', // Can be added to form if needed
-        status: newStaff.status
-      }
-      this.staff.push(staffMember)
-      alert(`Staff user ${newStaff.name} has been added successfully!`)
-    },
-    editStaff(staff) {
-      console.log('Edit staff:', staff)
-      alert(`Editing staff user: ${staff.name}`)
-      // TODO: Implement edit staff modal/form
-    },
-    viewStaff(staff) {
-      console.log('View staff:', staff)
-      alert(`Viewing details for staff user: ${staff.name} - ${staff.role}`)
-      // TODO: Implement view staff details modal/page
-    }
   }
+  // Setup-based component - reactive state and computed properties are returned from setup()
 }
 </script>
 
@@ -422,6 +507,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-left: auto;
 }
 
 .user-avatar {

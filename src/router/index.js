@@ -2,11 +2,12 @@ import { createRouter, createWebHistory } from 'vue-router'
 import LoginPage from '../components/Login.vue'
 import SignUpPage from '../components/SignUp.vue'
 import DashboardPage from '../views/Dashboard.vue'
+import StudentHomePage from '../views/StudentHome.vue'
 import PatientRecordPage from '../views/PatientRecord.vue'
 import MedicinePage from '../views/Medicine.vue'
 import TransactionsPage from '../views/Transactions.vue'
 import ClinicStaffUsersPage from '../views/ClinicStaffUsers.vue'
-import ConsultationsPage from '../views/Consultations.vue'
+
 
 const routes = [
   {
@@ -29,6 +30,11 @@ const routes = [
     component: DashboardPage
   },
   {
+    path: '/student-home',
+    name: 'StudentHome',
+    component: StudentHomePage
+  },
+  {
     path: '/patient-record',
     name: 'PatientRecord',
     component: PatientRecordPage
@@ -47,11 +53,6 @@ const routes = [
     path: '/staff-users',
     name: 'StaffUsers',
     component: ClinicStaffUsersPage
-  },
-  {
-    path: '/consultations',
-    name: 'Consultations',
-    component: ConsultationsPage
   }
 ]
 

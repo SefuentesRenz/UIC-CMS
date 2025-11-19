@@ -36,13 +36,18 @@
                 <label for="collegeDept">
                   College Dept. <span class="required">*</span>
                 </label>
-                <input 
-                  type="text" 
+                <select 
                   id="collegeDept" 
-                  v-model="formData.collegeDept" 
-                  placeholder="Enter college department"
+                  v-model="formData.collegeDept"
                   required
-                />
+                >
+                  <option value="" disabled>Select department</option>
+                  <option value="Male">College of Nursing</option>
+                  <option value="Female">College of Computer Studies</option>
+                  <option value="Female">College of Education</option>
+                  <option value="Female">College of Music</option>
+                  <option value="Female">College of Engineering</option>
+                </select>
               </div>
               <div class="form-group">
                 <label for="schoolId">
@@ -191,16 +196,22 @@ export default {
     handleSubmit() {
       // Validate all required fields
       if (this.validateForm()) {
-        // Emit the new patient data to parent component
-        this.$emit('add-patient', {
-          ...this.formData,
-          id: Date.now(), // Generate unique ID
-          idNumber: this.formData.schoolId,
-          status: 'Active' // Default status
+        // Emit the new patient data to parent component with correct field mapping
+        const now = new Date().toISOString();
+
+this.$emit('add-patient', {
+  fullName: this.formData.fullName,
+  idNumber: this.formData.schoolId,
+  email: this.formData.email,
+  department: this.formData.collegeDept,
+  program: this.formData.program,
+  yearSection: this.formData.yearSection,
+  contactNumber: this.formData.contactNumber,
+  sex: this.formData.sex,
+  type: this.formData.type,
+  created_at: now
+  // do NOT include updated_at
         })
-        
-        // Show success message
-        alert('Patient added successfully!')
         
         // Reset form and close modal
         this.closeModal()
@@ -211,7 +222,7 @@ export default {
       
       for (let field of requiredFields) {
         if (!this.formData[field] || this.formData[field].trim() === '') {
-          alert(`Please fill in all required fields`)
+          this.$emit('validation-error', 'Please fill in all required fields')
           return false
         }
       }
@@ -219,7 +230,7 @@ export default {
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (!emailRegex.test(this.formData.email)) {
-        alert('Please enter a valid email address')
+        this.$emit('validation-error', 'Please enter a valid email address')
         return false
       }
       

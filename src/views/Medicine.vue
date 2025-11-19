@@ -56,14 +56,7 @@
           </i>
           <span>Clinic Staff Users</span>
         </router-link>
-        <router-link to="/consultations" class="nav-item">
-          <i class="icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" fill="currentColor" />
-            </svg>
-          </i>
-          <span>Consultations</span>
-        </router-link>
+        
       </nav>
     </aside>
 
@@ -71,10 +64,7 @@
     <main class="main-content">
       <!-- Header -->
       <header class="header">
-        <div class="search-bar">
-          <i class="search-icon">🔍</i>
-          <input type="text" placeholder="Search..." v-model="globalSearch" />
-        </div>
+        
         <div class="user-profile" @click="showProfileModal = true" style="cursor: pointer;">
           <img src="@/assets/NurseProfile.jpg" alt="Admin" class="user-avatar" />
           <span class="user-greeting">Hi, <strong>Admin</strong></span>
@@ -85,7 +75,16 @@
       <Profile :show="showProfileModal" @close="showProfileModal = false" />
 
       <!-- Add Medicine Modal -->
-      <AddMedicine :show="showAddMedicineModal" @close="showAddMedicineModal = false" @add-medicine="handleAddMedicine" />
+      <AddMedicine :show="showAddMedicineModal" @close="showAddMedicineModal = false" @add-medicine="addMedicine" />
+      
+      <!-- View Medicine Modal -->
+      <ViewMedicine
+        :show="showViewMedicineModal"
+        :medicine="selectedMedicine"
+        @close="closeViewMedicineModal"
+        @update-medicine="updateMedicine"
+        @validation-error="showValidationError"
+      />
 
       <!-- Medicine Stock Content -->
       <div class="page-content">
@@ -101,14 +100,30 @@
               <i class="search-icon-inline">🔍</i>
               <input type="text" v-model="tableSearch" placeholder="Search medicines..." aria-label="Search medicines" />
             </div>
-            <button class="add-medicine-btn" @click="addMedicine">
-              + Add Medicines
+            <button class="add-medicine-btn" @click="openAddMedicineModal" :disabled="loading">
+              {{ loading ? '⏳ Loading...' : '+ Add Medicines' }}
             </button>
           </div>
         </div>
 
         <!-- Table Section -->
-        <div class="table-container">
+        <!-- Loading State -->
+        <div v-if="loading" class="loading-state" style="text-align: center; padding: 40px; color: #64748b;">
+          <div style="font-size: 48px; margin-bottom: 16px;">⏳</div>
+          <p style="font-size: 18px; font-weight: 600;">Loading medicines...</p>
+        </div>
+
+        <!-- Error State -->
+        <div v-else-if="error" class="error-state" style="text-align: center; padding: 40px; color: #ef4444;">
+          <div style="font-size: 48px; margin-bottom: 16px;">❌</div>
+          <p style="font-size: 18px; font-weight: 600;">Error loading medicines</p>
+          <p style="color: #64748b; margin-top: 8px;">{{ error }}</p>
+          <button @click="getMedicines" style="margin-top: 16px; padding: 10px 20px; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer;">
+            Retry
+          </button>
+        </div>
+
+        <div v-else class="table-container">
           <div class="table-controls">
             <div class="entries-control">
               <input type="checkbox" id="entries-checkbox" />
@@ -134,19 +149,26 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="medicine in filteredMedicines" :key="medicine.id">
+                <tr v-if="filteredMedicines.length === 0">
+                  <td colspan="7" style="text-align: center; padding: 40px; color: #94a3b8;">
+                    <div style="font-size: 48px; margin-bottom: 12px;">💊</div>
+                    <p style="font-size: 16px; font-weight: 600;">No medicines found</p>
+                    <p style="font-size: 14px; margin-top: 8px;">Add your first medicine to get started</p>
+                  </td>
+                </tr>
+                <tr v-for="medicine in filteredMedicines" :key="medicine.id" v-else>
                   <td>{{ medicine.id }}</td>
                   <td class="name-cell">{{ medicine.name }}</td>
                   <td>{{ medicine.quantity }}</td>
-                  <td>{{ medicine.dateAdded }}</td>
-                  <td>{{ medicine.expirationDate }}</td>
+                  <td>{{ medicine.date_added }}</td>
+                  <td>{{ medicine.expiration_date }}</td>
                   <td>
                     <span :class="['status-badge', medicine.status.toLowerCase()]">
                       {{ medicine.status }}
                     </span>
                   </td>
                   <td>
-                    <button class="action-btn" @click="viewMedicine(medicine)" title="View/Edit Details">
+                    <button class="action-btn" @click="viewMedicine(medicine)" title="View/Edit Details" :disabled="loading">
                       📝
                     </button>
                   </td>
@@ -161,113 +183,227 @@
 </template>
 
 <script>
+import { ref, computed, onMounted } from 'vue'
+import { supabase } from '../supabaseClient'
 import Profile from '../components/Profile.vue'
 import AddMedicine from '../components/AddMedicine.vue'
+import ViewMedicine from '../components/ViewMedicine.vue'
 
 export default {
   name: 'MedicinePage',
   components: {
     Profile,
-    AddMedicine
+    AddMedicine,
+    ViewMedicine
   },
-  data() {
-    return {
-      globalSearch: '',
-      tableSearch: '',
-      showProfileModal: false,
-      showAddMedicineModal: false,
-      medicines: [
-        {
-          id: 1,
-          name: 'Amoxicillin',
-          quantity: 23,
-          dateAdded: '2025-02-03',
-          expirationDate: '2026-11-03',
-          status: 'Active'
-        },
-        {
-          id: 2,
-          name: 'Paracetamol',
-          quantity: 34,
-          dateAdded: '2025-02-03',
-          expirationDate: '2026-04-027',
-          status: 'Active'
-        },
-        {
-          id: 3,
-          name: 'Ambroxol',
-          quantity: 56,
-          dateAdded: '2025-02-03',
-          expirationDate: '2026-11-023',
-          status: 'Active'
-        },
-        {
-          id: 4,
-          name: 'Cetirizine',
-          quantity: 36,
-          dateAdded: '2025-02-03',
-          expirationDate: '2026-11-03',
-          status: 'Active'
-        },
-        {
-          id: 5,
-          name: 'Loperamide',
-          quantity: 45,
-          dateAdded: '2025-02-03',
-          expirationDate: '2026-02-22',
-          status: 'Active'
-        },
-        {
-          id: 6,
-          name: 'Mefenamic Acid',
-          quantity: 56,
-          dateAdded: '2025-02-03',
-          expirationDate: '2026-04-24',
-          status: 'Active'
-        },
-        {
-          id: 7,
-          name: 'Ibuprofen',
-          quantity: 42,
-          dateAdded: '2025-02-05',
-          expirationDate: '2026-08-15',
-          status: 'Active'
-        },
-        {
-          id: 8,
-          name: 'Biogesic',
-          quantity: 28,
-          dateAdded: '2025-02-10',
-          expirationDate: '2026-06-20',
-          status: 'Active'
-        },
-        {
-          id: 9,
-          name: 'Ascorbic Acid',
-          quantity: 65,
-          dateAdded: '2025-01-15',
-          expirationDate: '2026-12-31',
-          status: 'Active'
-        },
-        {
-          id: 10,
-          name: 'Salbutamol',
-          quantity: 18,
-          dateAdded: '2025-02-08',
-          expirationDate: '2026-03-10',
-          status: 'Active'
-        }
-      ]
-    }
-  },
-  computed: {
-    filteredMedicines() {
-      let filtered = this.medicines
+  setup() {
+    // Reactive state
+    const globalSearch = ref('')
+    const tableSearch = ref('')
+    const showProfileModal = ref(false)
+    const showAddMedicineModal = ref(false)
+    const showViewMedicineModal = ref(false)
+    const selectedMedicine = ref(null)
+    const medicines = ref([])
+    const loading = ref(false)
+    const error = ref(null)
 
-      // Filter by table search
-      if (this.tableSearch.trim()) {
-        const search = this.tableSearch.toLowerCase()
-        filtered = filtered.filter(m => 
+    // 🟢 FETCH MEDICINES FROM SUPABASE
+    const getMedicines = async () => {
+      console.log('=== FETCHING MEDICINES FROM SUPABASE ===')
+      loading.value = true
+      error.value = null
+
+      try {
+        const { data, error: fetchError } = await supabase
+          .from('medicine')
+          .select('*')
+          .order('id', { ascending: true })
+
+        if (fetchError) {
+          console.error('❌ Error fetching medicines:', fetchError)
+          error.value = fetchError.message
+          throw fetchError
+        }
+
+        console.log(`✅ Successfully fetched ${data.length} medicines`)
+        console.table(data)
+        medicines.value = data
+      } catch (err) {
+        console.error('❌ Failed to fetch medicines:', err)
+        alert(`Failed to fetch medicines: ${err.message}`)
+      } finally {
+        loading.value = false
+      }
+    }
+
+    // 🟢 ADD MEDICINE TO SUPABASE
+    const addMedicine = async (newMedicine) => {
+      console.log('=== ADDING MEDICINE TO SUPABASE ===')
+      console.log('New medicine data:', JSON.stringify(newMedicine, null, 2))
+      loading.value = true
+
+      try {
+        // Prepare data for Supabase (convert field names if needed)
+        const medicineData = {
+          name: newMedicine.name,
+          quantity: parseInt(newMedicine.quantity),
+          date_added: newMedicine.dateAdded || new Date().toISOString().split('T')[0],
+          expiration_date: newMedicine.expirationDate,
+          status: newMedicine.status || 'Active'
+        }
+
+        console.log('📤 Sending to Supabase:', medicineData)
+
+        const { data, error: insertError } = await supabase
+          .from('medicine')
+          .insert([medicineData])
+          .select()
+
+        if (insertError) {
+          console.error('❌ Error adding medicine:', insertError)
+          throw insertError
+        }
+
+        console.log('✅ Medicine added successfully:', data)
+        
+        // Refresh the medicines list
+        await getMedicines()
+        
+        // Close modal
+        showAddMedicineModal.value = false
+        
+        alert(`✅ Medicine "${newMedicine.name}" added successfully!`)
+      } catch (err) {
+        console.error('❌ Failed to add medicine:', err)
+        alert(`Failed to add medicine: ${err.message}`)
+      } finally {
+        loading.value = false
+      }
+    }
+
+    // 🟢 UPDATE MEDICINE IN SUPABASE
+    const updateMedicine = async (updatedMedicine) => {
+      console.log('=== UPDATING MEDICINE IN SUPABASE ===')
+      console.log('Updated medicine data:', JSON.stringify(updatedMedicine, null, 2))
+      loading.value = true
+
+      try {
+        // Prepare data for Supabase
+        const medicineData = {
+          name: updatedMedicine.name,
+          quantity: parseInt(updatedMedicine.quantity),
+          date_added: updatedMedicine.dateAdded || updatedMedicine.date_added,
+          expiration_date: updatedMedicine.expirationDate || updatedMedicine.expiration_date,
+          status: updatedMedicine.status || 'Active'
+        }
+
+        console.log(`📤 Updating medicine ID ${updatedMedicine.id} in Supabase:`, medicineData)
+
+        const { data, error: updateError } = await supabase
+          .from('medicine')
+          .update(medicineData)
+          .eq('id', updatedMedicine.id)
+          .select()
+
+        if (updateError) {
+          console.error('❌ Error updating medicine:', updateError)
+          throw updateError
+        }
+
+        if (!data || data.length === 0) {
+          console.warn('⚠️ Update returned no rows. Possible RLS policy issue.')
+          throw new Error('Update did not return any rows. Check RLS policies.')
+        }
+
+        console.log('✅ Medicine updated successfully:', data)
+        
+        // Refresh the medicines list
+        await getMedicines()
+        
+        // Close modal
+        closeViewMedicineModal()
+        
+        alert(`✅ Medicine "${updatedMedicine.name}" updated successfully!`)
+      } catch (err) {
+        console.error('❌ Failed to update medicine:', err)
+        alert(`Failed to update medicine: ${err.message}`)
+      } finally {
+        loading.value = false
+      }
+    }
+
+    // 🟢 DELETE MEDICINE FROM SUPABASE (Optional - if you want delete functionality)
+    const deleteMedicine = async (medicineId) => {
+      console.log(`=== DELETING MEDICINE ID ${medicineId} FROM SUPABASE ===`)
+      loading.value = true
+
+      try {
+        const { error: deleteError } = await supabase
+          .from('medicine')
+          .delete()
+          .eq('id', medicineId)
+
+        if (deleteError) {
+          console.error('❌ Error deleting medicine:', deleteError)
+          throw deleteError
+        }
+
+        console.log('✅ Medicine deleted successfully')
+        
+        // Refresh the medicines list
+        await getMedicines()
+        
+        alert('✅ Medicine deleted successfully!')
+      } catch (err) {
+        console.error('❌ Failed to delete medicine:', err)
+        alert(`Failed to delete medicine: ${err.message}`)
+      } finally {
+        loading.value = false
+      }
+    }
+
+    // Modal handlers
+    const openAddMedicineModal = () => {
+      showAddMedicineModal.value = true
+    }
+
+    const viewMedicine = (medicine) => {
+      console.log('=== VIEW MEDICINE CLICKED ===')
+      console.log('Medicine data:', medicine)
+      
+      // Convert snake_case to camelCase for the modal
+      selectedMedicine.value = {
+        id: medicine.id,
+        name: medicine.name,
+        quantity: medicine.quantity,
+        dateAdded: medicine.date_added,
+        expirationDate: medicine.expiration_date,
+        status: medicine.status
+      }
+      
+      showViewMedicineModal.value = true
+    }
+
+    const closeViewMedicineModal = () => {
+      console.log('=== CLOSE VIEW MEDICINE MODAL ===')
+      showViewMedicineModal.value = false
+      selectedMedicine.value = null
+    }
+
+    const showValidationError = (message) => {
+      console.log('❌ Validation error:', message)
+      alert(`⚠️ ${message}`)
+    }
+
+    // Computed property for filtered medicines
+    const filteredMedicines = computed(() => {
+      let filtered = medicines.value
+
+      // Apply table search
+      if (tableSearch.value) {
+        const search = tableSearch.value.toLowerCase()
+        filtered = filtered.filter(m =>
           m.name.toLowerCase().includes(search) ||
           m.id.toString().includes(search) ||
           m.status.toLowerCase().includes(search)
@@ -275,24 +411,37 @@ export default {
       }
 
       return filtered
+    })
+
+    // Fetch medicines on component mount
+    onMounted(async () => {
+      console.log('=== MEDICINE COMPONENT MOUNTED ===')
+      await getMedicines()
+    })
+
+    // Return everything for the template
+    return {
+      globalSearch,
+      tableSearch,
+      showProfileModal,
+      showAddMedicineModal,
+      showViewMedicineModal,
+      selectedMedicine,
+      medicines,
+      loading,
+      error,
+      filteredMedicines,
+      getMedicines,
+      addMedicine,
+      updateMedicine,
+      deleteMedicine,
+      openAddMedicineModal,
+      viewMedicine,
+      closeViewMedicineModal,
+      showValidationError
     }
   },
-  methods: {
-    addMedicine() {
-      this.showAddMedicineModal = true
-    },
-    handleAddMedicine(newMedicine) {
-      // Add the new medicine to the medicines array
-      this.medicines.unshift(newMedicine)
-      this.showAddMedicineModal = false
-      console.log('New medicine added:', newMedicine)
-    },
-    viewMedicine(medicine) {
-      console.log('View/Edit medicine:', medicine)
-      alert(`Viewing details for ${medicine.name}`)
-      // TODO: Implement view/edit medicine details modal/page
-    }
-  }
+  // Setup-based component - reactive state and computed properties are returned from setup()
 }
 </script>
 
@@ -434,6 +583,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-left: auto;
 }
 
 .user-avatar {

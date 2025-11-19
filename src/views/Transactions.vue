@@ -56,14 +56,7 @@
           </i>
           <span>Clinic Staff Users</span>
         </router-link>
-        <router-link to="/consultations" class="nav-item">
-          <i class="icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" fill="currentColor" />
-            </svg>
-          </i>
-          <span>Consultations</span>
-        </router-link>
+        
       </nav>
     </aside>
 
@@ -71,10 +64,7 @@
     <main class="main-content">
       <!-- Header -->
       <header class="header">
-        <div class="search-bar">
-          <i class="search-icon">🔍</i>
-          <input type="text" placeholder="Search..." v-model="globalSearch" />
-        </div>
+        
         <div class="user-profile" @click="showProfileModal = true" style="cursor: pointer;">
           <img src="@/assets/NurseProfile.jpg" alt="Admin" class="user-avatar" />
           <span class="user-greeting">Hi, <strong>Admin</strong></span>
@@ -455,6 +445,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-left: auto;
 }
 
 .user-avatar {

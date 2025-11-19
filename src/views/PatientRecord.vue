@@ -56,14 +56,7 @@
           </i>
           <span>Clinic Staff Users</span>
         </router-link>
-        <router-link to="/consultations" class="nav-item">
-          <i class="icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" fill="currentColor" />
-            </svg>
-          </i>
-          <span>Consultations</span>
-        </router-link>
+        
       </nav>
     </aside>
 
@@ -71,10 +64,7 @@
     <main class="main-content">
       <!-- Header -->
       <header class="header">
-        <div class="search-bar">
-          <i class="search-icon">🔍</i>
-          <input type="text" placeholder="Search..." v-model="globalSearch" />
-        </div>
+        
         <div class="user-profile" @click="showProfileModal = true" style="cursor: pointer;">
           <img src="@/assets/logo.png" alt="Admin" class="user-avatar" />
           <span class="user-greeting">Hi, <strong>Admin</strong></span>
@@ -88,7 +78,28 @@
       <AddPatient :show="showAddPatientModal" @close="showAddPatientModal = false" @add-patient="handleAddPatient" />
 
       <!-- View Patient Modal -->
-      <ViewPatient :show="showViewPatientModal" :patient="selectedPatient" @close="showViewPatientModal = false" />
+      <ViewPatient 
+        :show="showViewPatientModal" 
+        :patient="selectedPatient" 
+        @close="showViewPatientModal = false" 
+        @update-patient="handleUpdatePatient"
+        @validation-error="handleValidationError"
+      />
+
+      <!-- Error Notification -->
+      <transition name="fade">
+        <div v-if="error" class="error-notification">
+          <div class="error-content">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+              <path d="M12 8V12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="12" cy="16" r="1" fill="currentColor"/>
+            </svg>
+            <span>{{ error }}</span>
+          </div>
+          <button @click="error = null" class="error-close">✕</button>
+        </div>
+      </transition>
 
       <!-- Patient Record Content -->
       <div class="page-content">
@@ -277,16 +288,17 @@ const handleAddPatient = async (patientData) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('No authenticated user')
 
-    // Insert new patient
+    // Insert new patient with correct field mapping
     const newPatient = {
       school_id: patientData.idNumber,
       full_name: patientData.fullName,
       email: patientData.email,
+      contact_number: patientData.contactNumber,
       college_department: patientData.department,
       program: patientData.program,
       year_section: patientData.yearSection,
-      type: patientData.type,
       sex: patientData.sex,
+      type: patientData.type,
       created_by: user.id,
       created_at: new Date().toISOString()
     }
@@ -305,10 +317,13 @@ const handleAddPatient = async (patientData) => {
     console.log('New patient added:', data)
     patients.value = [data, ...(patients.value || [])]
     showAddPatientModal.value = false
+    
+    // Clear any error messages on success
+    error.value = null
 
   } catch (err) {
     console.error('Error adding patient:', err)
-    error.value = 'Failed to add patient'
+    error.value = `Failed to add patient: ${err.message}`
   } finally {
     isLoading.value = false
   }
@@ -320,6 +335,8 @@ const viewPatient = async (patient) => {
     isLoading.value = true
     error.value = null
 
+    console.log('Fetching patient details for:', patient)
+
     // Fetch full patient details including any related data
     const { data, error: err } = await supabase
       .from('patients')
@@ -329,6 +346,7 @@ const viewPatient = async (patient) => {
 
     if (err) throw err
 
+    console.log('Patient data fetched:', data)
     selectedPatient.value = data
     showViewPatientModal.value = true
 
@@ -338,6 +356,155 @@ const viewPatient = async (patient) => {
   } finally {
     isLoading.value = false
   }
+}
+
+// Update patient details
+const handleUpdatePatient = async (updatedPatient) => {
+  console.log('=== handleUpdatePatient CALLED ===')
+  console.log('Received updatedPatient:', JSON.stringify(updatedPatient, null, 2))
+  
+  try {
+    isLoading.value = true
+    error.value = null
+
+    console.log('📝 Updating patient with ID:', updatedPatient.id)
+
+    // Prepare update payload
+    const updatePayload = {
+      full_name: updatedPatient.full_name,
+      school_id: updatedPatient.school_id,
+      email: updatedPatient.email,
+      contact_number: updatedPatient.contact_number,
+      college_department: updatedPatient.college_department,
+      program: updatedPatient.program,
+      year_section: updatedPatient.year_section,
+      sex: updatedPatient.sex,
+      type: updatedPatient.type,
+      updated_at: new Date().toISOString()
+    }
+
+    console.log('📤 Update payload:', updatePayload)
+
+    // First, update the patient record
+    const { error: updateError } = await supabase
+      .from('patients')
+      .update(updatePayload)
+      .eq('id', updatedPatient.id)
+
+    if (updateError) {
+      console.error('❌ Update error:', updateError)
+      throw updateError
+    }
+
+    console.log('✅ Update successful, fetching updated data...')
+
+    // Then fetch the updated patient data
+    const { data, error: fetchError } = await supabase
+      .from('patients')
+      .select('*')
+      .eq('id', updatedPatient.id)
+      .single()
+
+    if (fetchError) {
+      console.error('❌ Fetch error:', fetchError)
+      throw fetchError
+    }
+
+    console.log('✅ Patient data fetched:', data)
+
+    // Verify that fetched data matches the submitted payload
+    const fieldsToCheck = ['full_name','school_id','email','contact_number','college_department','program','year_section','sex','type']
+    const mismatches = []
+    for (const f of fieldsToCheck) {
+      const submitted = (updatePayload)[f] ?? null
+      const returned = (data)[f] ?? null
+      // Normalize strings for comparison
+      const s = typeof submitted === 'string' ? submitted.trim() : submitted
+      const r = typeof returned === 'string' ? returned.trim() : returned
+      if (s !== r) mismatches.push({ field: f, submitted: s, returned: r })
+    }
+
+    if (mismatches.length) {
+      console.warn('⚠️ Mismatched fields after update:', mismatches)
+      console.table(mismatches)
+      // Try to perform an update that returns the row (select) and capture response
+      try {
+        const { data: returnedRows, error: retryError } = await supabase
+          .from('patients')
+          .update(updatePayload)
+          .eq('id', updatedPatient.id)
+          .select()
+
+        if (retryError) {
+          console.error('Retry update error:', retryError)
+          throw retryError
+        }
+
+        console.log('Raw retry response - returnedRows:', returnedRows)
+        
+        // returnedRows may be an array — pick first
+        const returned = Array.isArray(returnedRows) ? returnedRows[0] : returnedRows
+        console.log('Retry returned row:', returned)
+        
+        if (!returned || !returnedRows || (Array.isArray(returnedRows) && returnedRows.length === 0)) {
+          console.error('❌ UPDATE DID NOT RETURN ANY ROWS - This means RLS is blocking the update!')
+          error.value = 'Update blocked by database security policy (RLS). The update was rejected.'
+          throw new Error('RLS policy blocked the update')
+        }
+
+        // Use returned data if valid
+        if (returned) data = returned
+      } catch (retryErr) {
+        console.error('Retry failed:', retryErr)
+        error.value = 'Update appears to have not persisted. Check Supabase RLS and try again.'
+      }
+    }
+
+    // Update local patients array
+    const index = patients.value.findIndex(p => p.id === updatedPatient.id)
+    console.log('📊 Updating local array at index:', index)
+    
+    if (index !== -1) {
+      patients.value[index] = data
+      console.log('✅ Local array updated')
+    }
+
+    // Update selectedPatient to reflect changes in the modal
+    selectedPatient.value = data
+    console.log('✅ selectedPatient updated')
+
+    // Refresh whole list to ensure UI consistency
+    try {
+      await fetchPatients()
+      console.log('✅ Refreshed patients list')
+    } catch (refreshErr) {
+      console.warn('Failed to refresh patient list after update:', refreshErr)
+    }
+
+    showViewPatientModal.value = false
+    console.log('✅ Modal closed')
+
+  } catch (err) {
+    console.error('❌ Error updating patient:', err)
+    console.error('Error details:', {
+      message: err.message,
+      code: err.code,
+      details: err.details,
+      hint: err.hint
+    })
+    error.value = `Failed to update patient: ${err.message}`
+  } finally {
+    isLoading.value = false
+    console.log('=== handleUpdatePatient FINISHED ===')
+  }
+}
+
+// Handle validation errors from modals
+const handleValidationError = (errorMessage) => {
+  error.value = errorMessage
+  setTimeout(() => {
+    error.value = null
+  }, 5000)
 }
 
 // Helper functions
@@ -373,6 +540,76 @@ onMounted(async () => {
   min-height: 100vh;
   background: #f5f7fa;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Error Notification */
+.error-notification {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  padding: 16px 20px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.4);
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 400px;
+  animation: slideInRight 0.3s ease;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.error-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.error-content svg {
+  flex-shrink: 0;
+}
+
+.error-close {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.error-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 /* Sidebar Styles (reused from Dashboard) */
@@ -499,6 +736,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-left: auto;
 }
 
 .user-avatar {

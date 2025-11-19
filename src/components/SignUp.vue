@@ -21,6 +21,43 @@
         <h2 class="title">Create Account</h2>
 
         <form @submit.prevent="handleSignup" class="signup-form">
+          <!-- Account Type Selection -->
+          <div class="form-group">
+            <label>Account Type:</label>
+            <div class="account-type-toggle">
+              <button
+                type="button"
+                :class="['type-btn', { active: accountType === 'Student' }]"
+                @click="accountType = 'Student'"
+              >
+                 Student
+              </button>
+              <button
+                type="button"
+                :class="['type-btn', { active: accountType === 'Admin' }]"
+                @click="accountType = 'Admin'"
+              >
+                Admin
+              </button>
+            </div>
+          </div>
+
+          <!-- Role Selection (only for Admin) -->
+          <div class="form-group" v-if="accountType === 'Admin'">
+            <label for="role">Role: <span class="required">*</span></label>
+            <select
+              id="role"
+              v-model="role"
+              class="role-select"
+              required
+            >
+              <option value="" disabled>Select your role</option>
+              <option value="Nurse">Nurse</option>
+              <option value="Staff">Staff</option>
+             
+            </select>
+          </div>
+
           <div class="form-group">
             <label for="name">Name:</label>
             <input
@@ -111,6 +148,8 @@ export default {
   name: 'SignUpPage',
   data() {
     return {
+      accountType: 'Student', // Default to Student
+      role: '', // Role for Admin users (Nurse, Staff, Admin)
       name: '',
       email: '',
       schoolId: '',
@@ -144,6 +183,12 @@ export default {
         return
       }
 
+      // Validate role selection for Admin accounts
+      if (this.accountType === 'Admin' && !this.role) {
+        alert('Please select your role (Nurse, Staff, or Admin)')
+        return
+      }
+
       // Validate passwords match
       if (this.password !== this.confirmPassword) {
         alert('Passwords do not match!')
@@ -170,6 +215,16 @@ export default {
       try {
         this.isLoading = true // Show loading state
         
+        // Determine the role based on account type
+        const userRole = this.accountType === 'Student' ? 'Student' : this.role
+        
+        console.log('Creating account with:', {
+          accountType: this.accountType,
+          role: userRole,
+          name: this.name,
+          email: this.email
+        })
+        
         // Create authentication user using Supabase Auth
         // Pass user metadata that will be used by the database trigger
         const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -179,7 +234,7 @@ export default {
             data: {
               full_name: this.name,
               school_id: this.schoolId,
-              role: 'user' // Default role
+              role: userRole // Student or Admin role (Nurse/Staff/Admin)
             }
           }
         })
@@ -203,15 +258,22 @@ export default {
         console.log('Profile automatically created via database trigger')
 
         // ============================================
-        // Step 3: Show success and redirect
+        // Step 3: Show success and redirect based on account type
         // ============================================
         // Note: Profile is now created automatically by the database trigger
         // No need for manual insertion anymore
         
-        alert('Account created successfully! Please check your email to verify your account.')
+        alert(`Account created successfully as ${this.accountType}!`)
         
-        // Navigate to login page after successful signup
-        this.$router.push('/login')
+        // Redirect based on account type
+        if (this.accountType === 'Student') {
+          console.log('Redirecting to Student Home...')
+          this.$router.push('/student-home')
+        } else {
+          // Admin (Nurse/Staff/Admin) goes to Dashboard
+          console.log('Redirecting to Dashboard...')
+          this.$router.push('/dashboard')
+        }
         
       } catch (error) {
         // Handle any unexpected errors
@@ -428,6 +490,85 @@ export default {
 .form-group input::placeholder,
 .input-wrapper input::placeholder {
   color: #94a3b8;
+}
+
+/* Account Type Toggle */
+.account-type-toggle {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.type-btn {
+  flex: 1;
+  padding: 12px 16px;
+  border: 2px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.type-btn:hover {
+  border-color: #cbd5e1;
+  background: white;
+}
+
+.type-btn.active {
+  background: linear-gradient(135deg, #ec4899 0%, #d946ef 100%);
+  color: white;
+  border-color: #ec4899;
+  box-shadow: 0 4px 12px rgba(236, 72, 153, 0.3);
+}
+
+/* Role Select Dropdown */
+.role-select {
+  width: 100%;
+  padding: 11px 14px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #f8fafc;
+  color: #1e293b;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748b' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 40px;
+}
+
+.role-select:hover {
+  border-color: #cbd5e1;
+  background-color: white;
+}
+
+.role-select:focus {
+  outline: none;
+  background-color: white;
+  border-color: #ec4899;
+  box-shadow: 0 0 0 4px rgba(236, 72, 153, 0.1);
+}
+
+.role-select option {
+  background: white;
+  color: #1e293b;
+  padding: 10px;
+}
+
+.required {
+  color: #ef4444;
+  font-weight: 700;
 }
 
 .toggle-visibility {

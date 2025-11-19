@@ -10,8 +10,8 @@
             </svg>
           </div>
           <div>
-            <h2 class="modal-title">Patient Information</h2>
-            <p class="modal-subtitle">Complete medical record details</p>
+            <h2 class="modal-title">{{ isEditMode ? 'Edit Patient Information' : 'Patient Information' }}</h2>
+            <p class="modal-subtitle">{{ isEditMode ? 'Update patient record details' : 'Complete medical record details' }}</p>
           </div>
         </div>
         <button class="close-btn" @click="closeModal" title="Close">
@@ -22,16 +22,27 @@
       </div>
 
       <div class="modal-body">
-        <!-- Status Badge -->
-        <div class="status-section">
-          <span :class="['status-badge-large', patient.status.toLowerCase()]">
-            <span class="status-dot"></span>
-            {{ patient.status }}
-          </span>
+        <!-- Loading/Empty State -->
+        <div v-if="!patient || Object.keys(patient).length === 0" class="empty-state">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="10" stroke="#cbd5e1" stroke-width="2"/>
+            <path d="M12 8V12L15 15" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <p>Loading patient data...</p>
         </div>
 
-        <!-- Patient Details Grid -->
-        <div class="details-grid">
+        <!-- Patient Data -->
+        <template v-else>
+          <!-- Status Badge -->
+          <div class="status-section" v-if="patient.status">
+            <span :class="['status-badge-large', patient.status?.toLowerCase()]">
+              <span class="status-dot"></span>
+              {{ patient.status }}
+            </span>
+          </div>
+
+          <!-- Patient Details Grid -->
+          <div class="details-grid">
           <!-- Personal Information Section -->
           <div class="section-card">
             <div class="section-header">
@@ -45,20 +56,31 @@
             </div>
             <div class="info-rows">
               <div class="info-row">
-                <span class="info-label">Full Name</span>
-                <span class="info-value">{{ patient.fullName }}</span>
+                <span class="info-label">Full Name <span v-if="isEditMode" class="required">*</span></span>
+                <span v-if="!isEditMode" class="info-value">{{ patient.full_name || patient.fullName }}</span>
+                <input v-else type="text" v-model="editedPatient.full_name" class="edit-input" required />
               </div>
               <div class="info-row">
-                <span class="info-label">ID Number</span>
-                <span class="info-value">{{ patient.idNumber }}</span>
+                <span class="info-label">ID Number <span v-if="isEditMode" class="required">*</span></span>
+                <span v-if="!isEditMode" class="info-value">{{ patient.school_id || patient.idNumber }}</span>
+                <input v-else type="text" v-model="editedPatient.school_id" class="edit-input" required />
               </div>
               <div class="info-row">
-                <span class="info-label">Sex</span>
-                <span class="info-value">{{ patient.sex }}</span>
+                <span class="info-label">Sex <span v-if="isEditMode" class="required">*</span></span>
+                <span v-if="!isEditMode" class="info-value">{{ patient.sex }}</span>
+                <select v-else v-model="editedPatient.sex" class="edit-select" required>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                </select>
               </div>
               <div class="info-row">
-                <span class="info-label">Type</span>
-                <span class="info-value type-badge">{{ patient.type }}</span>
+                <span class="info-label">Type <span v-if="isEditMode" class="required">*</span></span>
+                <span v-if="!isEditMode" class="info-value type-badge">{{ patient.type }}</span>
+                <select v-else v-model="editedPatient.type" class="edit-select" required>
+                  <option value="Student">Student</option>
+                  <option value="Faculty">Faculty</option>
+                  <option value="Staff">Staff</option>
+                </select>
               </div>
             </div>
           </div>
@@ -76,18 +98,20 @@
             </div>
             <div class="info-rows">
               <div class="info-row">
-                <span class="info-label">Email Address</span>
-                <span class="info-value email">{{ patient.email }}</span>
+                <span class="info-label">Email Address <span v-if="isEditMode" class="required">*</span></span>
+                <span v-if="!isEditMode" class="info-value email">{{ patient.email }}</span>
+                <input v-else type="email" v-model="editedPatient.email" class="edit-input" required />
               </div>
-              <div class="info-row" v-if="patient.contactNumber">
-                <span class="info-label">Contact Number</span>
-                <span class="info-value">{{ patient.contactNumber || 'N/A' }}</span>
+              <div class="info-row">
+                <span class="info-label">Contact Number <span v-if="isEditMode" class="required">*</span></span>
+                <span v-if="!isEditMode" class="info-value">{{ patient.contact_number || patient.contactNumber || 'N/A' }}</span>
+                <input v-else type="tel" v-model="editedPatient.contact_number" class="edit-input" placeholder="09XXXXXXXXX" required />
               </div>
             </div>
           </div>
 
           <!-- Academic Information Section (if applicable) -->
-          <div class="section-card" v-if="patient.type === 'Student'">
+          <div class="section-card" v-if="patient.type === 'Student' || editedPatient.type === 'Student'">
             <div class="section-header">
               <div class="section-icon academic">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -98,17 +122,20 @@
               <h3 class="section-title">Academic Information</h3>
             </div>
             <div class="info-rows">
-              <div class="info-row" v-if="patient.collegeDept">
-                <span class="info-label">College/Department</span>
-                <span class="info-value">{{ patient.collegeDept || 'N/A' }}</span>
+              <div class="info-row">
+                <span class="info-label">College/Department <span v-if="isEditMode" class="required">*</span></span>
+                <span v-if="!isEditMode" class="info-value">{{ patient.college_department || patient.collegeDept || 'N/A' }}</span>
+                <input v-else type="text" v-model="editedPatient.college_department" class="edit-input" required />
               </div>
-              <div class="info-row" v-if="patient.program">
-                <span class="info-label">Program</span>
-                <span class="info-value">{{ patient.program || 'N/A' }}</span>
+              <div class="info-row">
+                <span class="info-label">Program <span v-if="isEditMode" class="required">*</span></span>
+                <span v-if="!isEditMode" class="info-value">{{ patient.program || 'N/A' }}</span>
+                <input v-else type="text" v-model="editedPatient.program" class="edit-input" required />
               </div>
-              <div class="info-row" v-if="patient.yearSection">
-                <span class="info-label">Year & Section</span>
-                <span class="info-value">{{ patient.yearSection || 'N/A' }}</span>
+              <div class="info-row">
+                <span class="info-label">Year & Section <span v-if="isEditMode" class="required">*</span></span>
+                <span v-if="!isEditMode" class="info-value">{{ patient.year_section || patient.yearSection || 'N/A' }}</span>
+                <input v-else type="text" v-model="editedPatient.year_section" class="edit-input" placeholder="e.g., 3-A" required />
               </div>
             </div>
           </div>
@@ -141,18 +168,32 @@
         </div>
 
         <!-- Action Buttons -->
-        <div class="modal-actions">
-          <button type="button" class="btn-edit" @click="editPatient">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M11 4H4C3.46957 4 2.96086 4.21071 2.58579 4.58579C2.21071 4.96086 2 5.46957 2 6V20C2 20.5304 2.21071 21.0391 2.58579 21.4142C2.96086 21.7893 3.46957 22 4 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              <path d="M18.5 2.50023C18.8978 2.1024 19.4374 1.87891 20 1.87891C20.5626 1.87891 21.1022 2.1024 21.5 2.50023C21.8978 2.89805 22.1213 3.43762 22.1213 4.00023C22.1213 4.56284 21.8978 5.1024 21.5 5.50023L12 15.0002L8 16.0002L9 12.0002L18.5 2.50023Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            Edit Patient
-          </button>
-          <button type="button" class="btn-close" @click="closeModal">
-            Close
-          </button>
+        <div class="modal-actions" v-if="patient && Object.keys(patient).length > 0">
+          <template v-if="!isEditMode">
+            <button type="button" class="btn-edit" @click="editPatient">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11 4H4C3.46957 4 2.96086 4.21071 2.58579 4.58579C2.21071 4.96086 2 5.46957 2 6V20C2 20.5304 2.21071 21.0391 2.58579 21.4142C2.96086 21.7893 3.46957 22 4 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path d="M18.5 2.50023C18.8978 2.1024 19.4374 1.87891 20 1.87891C20.5626 1.87891 21.1022 2.1024 21.5 2.50023C21.8978 2.89805 22.1213 3.43762 22.1213 4.00023C22.1213 4.56284 21.8978 5.1024 21.5 5.50023L12 15.0002L8 16.0002L9 12.0002L18.5 2.50023Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              Edit Patient
+            </button>
+            <button type="button" class="btn-close" @click="closeModal">
+              Close
+            </button>
+          </template>
+          <template v-else>
+            <button type="button" class="btn-save" @click="savePatient">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 6L9 17L4 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              Save Changes
+            </button>
+            <button type="button" class="btn-cancel" @click="cancelEdit">
+              Cancel
+            </button>
+          </template>
         </div>
+        </template>
       </div>
     </div>
   </div>
@@ -168,19 +209,99 @@ export default {
     },
     patient: {
       type: Object,
-      default: () => ({})
+      default: null
+    }
+  },
+  data() {
+    return {
+      isEditMode: false,
+      editedPatient: {}
+    }
+  },
+  watch: {
+    patient: {
+      immediate: true,
+      deep: true,
+      handler(newPatient) {
+        if (newPatient && Object.keys(newPatient).length > 0) {
+          this.editedPatient = { ...newPatient }
+        }
+      }
+    },
+    show(newVal) {
+      if (!newVal) {
+        this.isEditMode = false
+      } else if (newVal && this.patient) {
+        // Ensure editedPatient is synced when modal opens
+        this.editedPatient = { ...this.patient }
+      }
     }
   },
   methods: {
     closeModal() {
+      this.isEditMode = false
       this.$emit('close')
     },
     editPatient() {
-      // TODO: Implement edit patient functionality
-      alert('Edit patient functionality will be implemented')
-      console.log('Editing patient:', this.patient)
-      // You can emit an event to open an edit modal
-      // this.$emit('edit', this.patient)
+      this.isEditMode = true
+    },
+    cancelEdit() {
+      this.isEditMode = false
+      this.editedPatient = { ...this.patient }
+    },
+    async savePatient() {
+      console.log('=== SAVE PATIENT CLICKED ===')
+      console.log('editedPatient data:', JSON.stringify(this.editedPatient, null, 2))
+      
+      if (!this.validateForm()) {
+        console.log('❌ Validation failed')
+        return
+      }
+      
+      console.log('✅ Validation passed')
+      console.log('🚀 Emitting update-patient event with data:', this.editedPatient)
+      
+      this.$emit('update-patient', this.editedPatient)
+      
+      // Keep edit mode open until parent confirms success
+      // Parent will close modal after successful update
+    },
+    validateForm() {
+      const { full_name, school_id, email, contact_number, college_department, program, year_section, sex, type } = this.editedPatient
+      
+      console.log('Validating form with data:', { full_name, school_id, email, contact_number, college_department, program, year_section, sex, type })
+      
+      if (!full_name || !school_id || !email) {
+        console.log('Missing required field:', { full_name, school_id, email })
+        this.$emit('validation-error', 'Please fill in all required fields (Name, ID, Email)')
+        return false
+      }
+      
+      // Check other required fields
+      if (!college_department || !program || !year_section || !sex || !type) {
+        console.log('Missing required field:', { college_department, program, year_section, sex, type })
+        this.$emit('validation-error', 'Please fill in all required fields')
+        return false
+      }
+      
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(email)) {
+        console.log('Invalid email format:', email)
+        this.$emit('validation-error', 'Please enter a valid email address')
+        return false
+      }
+      
+      if (contact_number) {
+        const phoneRegex = /^09\d{9}$/
+        if (!phoneRegex.test(contact_number)) {
+          console.log('Invalid phone format:', contact_number)
+          this.$emit('validation-error', 'Please enter a valid Philippine mobile number (09XXXXXXXXX)')
+          return false
+        }
+      }
+      
+      console.log('Validation passed!')
+      return true
     }
   }
 }
@@ -293,6 +414,30 @@ export default {
   padding: 30px;
   overflow-y: auto;
   flex: 1;
+}
+
+/* Empty State */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #94a3b8;
+  text-align: center;
+  min-height: 300px;
+}
+
+.empty-state svg {
+  margin-bottom: 16px;
+  opacity: 0.5;
+  animation: pulse 2s infinite;
+}
+
+.empty-state p {
+  font-size: 16px;
+  margin: 0;
+  font-weight: 500;
 }
 
 /* Status Section */
@@ -498,6 +643,79 @@ export default {
 .btn-close:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
+}
+
+.btn-save,
+.btn-cancel {
+  flex: 1;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-save {
+  background: linear-gradient(135deg, #ec4899 0%, #d946ef 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(236, 72, 153, 0.3);
+}
+
+.btn-save:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(236, 72, 153, 0.4);
+}
+
+.btn-cancel {
+  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(100, 116, 139, 0.3);
+}
+
+.btn-cancel:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(100, 116, 139, 0.4);
+}
+
+/* Edit Mode Styles */
+.edit-input,
+.edit-select {
+  width: 100%;
+  padding: 10px 14px;
+  border: 2px solid #cbd5e1;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #1f2937;
+  background: white;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.edit-input:focus,
+.edit-select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.edit-select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+
+.required {
+  color: #ef4444;
+  font-weight: 700;
 }
 
 /* Custom Scrollbar */

@@ -18,8 +18,26 @@
     <!-- Right side with login form -->
     <div class="right-section">
       <div class="login-card">
-        <h2 class="welcome-title">Welcome Admin!</h2>
+        <h2 class="welcome-title">Welcome {{ accountType }}!</h2>
         <p class="subtitle">Login To Continue</p>
+
+        <!-- Account Type Selection -->
+        <div class="account-type-toggle">
+          <button 
+            type="button" 
+            :class="['type-btn', { active: accountType === 'Student' }]"
+            @click="accountType = 'Student'"
+          >
+            Student
+          </button>
+          <button 
+            type="button" 
+            :class="['type-btn', { active: accountType === 'Admin' }]"
+            @click="accountType = 'Admin'"
+          >
+            Admin
+          </button>
+        </div>
 
         <form @submit.prevent="handleLogin" class="login-form">
           <div class="form-group">
@@ -85,6 +103,7 @@ export default {
     return {
       email: '',
       password: '',
+      accountType: 'Student', // Default to Student login
       showPassword: false,
       showEmail: false,
       isLoading: false, // Track loading state during login
@@ -122,7 +141,6 @@ export default {
       // Validate that both email and password are provided
       if (!this.email || !this.password) {
         this.errorMessage = 'Please enter both email and password'
-        alert(this.errorMessage)
         return
       }
 
@@ -130,7 +148,6 @@ export default {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (!emailRegex.test(this.email)) {
         this.errorMessage = 'Please enter a valid email address'
-        alert(this.errorMessage)
         return
       }
 
@@ -164,53 +181,53 @@ export default {
 
         if (checkError && checkError.code === 'PGRST116') {
           // Profile doesn't exist, create it
-          const { error: createError } = await supabase
-            .from('profiles')
-            .insert([
-              { 
-                id: session.user.id,
-                email: session.user.email,
-                full_name: '',
-                school_id: '',
-                role: ''
-              }
-            ])
-          
-          if (createError) throw createError
-        }
+          try {
+            const { error: createError } = await supabase
+              .from('profiles')
+              .insert([
+                { 
+                  id: session.user.id,
+                  email: session.user.email,
+                  full_name: '',
+                  school_id: '',
+                  role: ''
+                }
+              ])
 
-        // Store session
-        localStorage.setItem('supabase.auth.token', session.access_token)
-
-        // Navigate to dashboard on success
-        this.$router.push('/dashboard')
-        if (authError) {
-          console.error('Login error:', authError)
-          
-          // Provide user-friendly error messages
-          if (authError.message.includes('Invalid login credentials')) {
-            this.errorMessage = 'Invalid email or password. Please try again.'
-          } else if (authError.message.includes('Email not confirmed')) {
-            this.errorMessage = 'Please verify your email address before logging in.'
-          } else {
-            this.errorMessage = `Login failed: ${authError.message}`
+            if (createError) throw createError
+          } catch (createErr) {
+            // Common cause: row-level security (RLS) policy prevents insert
+            console.error('Error creating profile:', createErr)
+            if (createErr?.message?.includes('row-level security') || createErr?.code === 'PGRST116') {
+              this.errorMessage = 'Unable to create profile due to database security rules (RLS). Please check your Supabase RLS policy for `profiles`.'
+            } else {
+              this.errorMessage = `Failed to create profile: ${createErr.message || createErr}`
+            }
+            this.isLoading = false
+            return
           }
-          
-          alert(this.errorMessage)
-          this.isLoading = false
-          return
         }
 
-        // Check if user data was returned
-        if (!authData.user) {
+        // Ensure the Supabase client has the session set for subsequent requests
+        try {
+          await supabase.auth.setSession({
+            access_token: session.access_token,
+            refresh_token: session.refresh_token
+          })
+        } catch (setErr) {
+          // Non-fatal: continue but log it
+          console.warn('supabase.auth.setSession failed:', setErr)
+        }
+
+        const user = session?.user
+        if (!user) {
           this.errorMessage = 'Login failed: No user data returned'
-          alert(this.errorMessage)
           this.isLoading = false
           return
         }
 
-        console.log('Login successful! User ID:', authData.user.id)
-        console.log('User email:', authData.user.email)
+        console.log('Login successful! User ID:', user.id)
+        console.log('User email:', user.email)
 
         // ============================================
         // Step 3: Fetch user profile from database
@@ -220,31 +237,56 @@ export default {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', authData.user.id)
+          .eq('id', user.id)
           .single()
 
         if (profileError) {
           console.warn('Profile fetch error:', profileError)
-          // Don't block login if profile fetch fails, just log the warning
-          console.log('Continuing with login despite profile fetch error')
-        } else {
-          // Store profile data for use in the application
-          this.userProfile = profileData
-          console.log('User profile loaded:', profileData)
-          
-          // You can store this in Vuex/Pinia store or localStorage if needed
-          // Example: localStorage.setItem('userProfile', JSON.stringify(profileData))
+          // If the profile fetch failed due to auth/session issues, show a message
+          if (profileError?.message?.includes('row-level security')) {
+            this.errorMessage = 'Cannot read profile due to database security rules (RLS). Please ensure authenticated access.'
+          } else {
+            console.log('Continuing with login despite profile fetch error')
+          }
+          // Default to dashboard if profile fetch fails
+          this.$router.push('/dashboard')
+          return
         }
 
+        // Store profile data for use in the application
+        this.userProfile = profileData
+        console.log('User profile loaded:', profileData)
+        
+        // You can store this in Vuex/Pinia store or localStorage if needed
+        localStorage.setItem('userProfile', JSON.stringify(profileData))
+
         // ============================================
-        // Step 4: Redirect to dashboard
+        // Step 4: Account type based redirect
         // ============================================
         
-        // Show success message
-        // alert('Login successful! Redirecting to dashboard...')
+        console.log('Selected account type:', this.accountType)
+        console.log('User role from database:', profileData.role)
         
-        // Navigate to dashboard page
-        this.$router.push('/dashboard')
+        // Redirect based on selected account type
+        if (this.accountType === 'Student') {
+          // Verify user is actually a student
+          if (profileData.role !== 'Student') {
+            this.errorMessage = 'This account is not a student account. Please select Admin mode.'
+            this.isLoading = false
+            return
+          }
+          console.log('Redirecting to Student Home...')
+          this.$router.push('/student-home')
+        } else {
+          // Admin mode - verify user is staff/nurse/admin
+          if (profileData.role === 'Student') {
+            this.errorMessage = 'This is a student account. Please select Student mode to login.'
+            this.isLoading = false
+            return
+          }
+          console.log('Redirecting to Dashboard...')
+          this.$router.push('/dashboard')
+        }
         
       } catch (error) {
         // Handle any unexpected errors
@@ -418,6 +460,40 @@ export default {
   margin: 16px 0 0 0;
   text-align: left;
   font-weight: 500;
+}
+
+/* Account Type Toggle */
+.account-type-toggle {
+  display: flex;
+  gap: 12px;
+  margin: 24px 0;
+  padding: 6px;
+  background: #f1f5f9;
+  border-radius: 12px;
+}
+
+.type-btn {
+  flex: 1;
+  padding: 12px 24px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.type-btn:hover {
+  color: #475569;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.type-btn.active {
+  background: linear-gradient(135deg, #ec4899 0%, #d946ef 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(236, 72, 153, 0.3);
 }
 
 .login-form {

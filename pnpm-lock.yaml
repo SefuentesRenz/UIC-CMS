@@ -12,7 +12,7 @@ importers:
         specifier: ^2.75.0
         version: 2.81.1
       chart.js:
-        specifier: ^4.5.0
+        specifier: ^4.5.1
         version: 4.5.1
       core-js:
         specifier: ^3.8.3

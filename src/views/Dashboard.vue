@@ -39,6 +39,15 @@
           </i>
           <span>Medicine</span>
         </router-link>
+        <router-link to="/consultations" class="nav-item">
+          <i class="icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M19 3H5C3.89543 3 3 3.89543 3 5V19C3 20.1046 3.89543 21 5 21H19C20.1046 21 21 20.1046 21 19V5C21 3.89543 20.1046 3 19 3Z" stroke="currentColor" stroke-width="2" fill="none"/>
+              <path d="M9 7H15M9 12H15M9 17H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </i>
+          <span>Consultations</span>
+        </router-link>
         <router-link to="/transactions" class="nav-item">
           <i class="icon" aria-hidden="true">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -121,7 +130,7 @@
 
         <!-- Chart Section -->
         <div class="chart-section">
-          <h2 class="chart-title">No. Of Patients Per Month In Year 2025</h2>
+          <h2 class="chart-title">{{ chartTitle }}</h2>
           
           <!-- Tab Navigation -->
           <div class="chart-tabs">
@@ -167,12 +176,6 @@ export default {
   components: {
     Profile
   },
-  async created() {
-    // Get initial user data
-    await this.fetchUserData()
-    // Fetch real stats from database
-    await this.fetchStats()
-  },
   data() {
     return {
       searchQuery: '',
@@ -186,19 +189,68 @@ export default {
       },
       chart: null,
       userName: 'User',
-      userAvatar: null
+      userAvatar: null,
+      chartData: {
+        students: [0,0,0,0,0,0,0,0,0,0,0,0],
+        faculties: [0,0,0,0,0,0,0,0,0,0,0,0],
+        staffs: [0,0,0,0,0,0,0,0,0,0,0,0],
+        diseases: [],
+        medicines: []
+      },
+      isDataLoaded: false
     }
+  },
+  computed: {
+    chartTitle() {
+      const currentYear = new Date().getFullYear()
+      
+      switch (this.activeTab) {
+        case 'patients':
+          return `No. Of Patients Per Month In Year ${currentYear}`
+        case 'diseases':
+          return `No. Of Diseases Per Month In Year ${currentYear}`
+        case 'medicines':
+          return `No. Of Medicines Dispensed Per Month In Year ${currentYear}`
+        default:
+          return `Statistics For Year ${currentYear}`
+      }
+    }
+  },
+  async created() {
+    await this.fetchUserData()
+    await this.fetchStats()
+    await this.fetchChartData()
+    this.isDataLoaded = true
   },
   mounted() {
     this.$nextTick(() => {
-      this.initChart()
+      if (this.isDataLoaded) {
+        this.initChart()
+      }
     })
   },
   beforeUnmount() {
     if (this.chart) {
       this.chart.destroy()
+      this.chart = null
     }
   },
+  watch: {
+  activeTab(newTab, oldTab) {
+    if (newTab !== oldTab && this.isDataLoaded) {
+      this.$nextTick(() => {
+        this.updateChartForTab(newTab)
+      })
+    }
+  },
+  isDataLoaded(newVal) {
+    if (newVal && this.$refs.chartCanvas && !this.chart) {
+      this.$nextTick(() => {
+        this.initChart()
+      })
+    }
+  }
+},
   methods: {
     async fetchUserData() {
       try {
@@ -221,37 +273,25 @@ export default {
     
     async fetchStats() {
       try {
-        // Fetch active patients count
-        const { count: patientsCount, error: patientsErr } = await supabase
+        const { count: patientsCount } = await supabase
           .from('patients')
           .select('*', { count: 'exact', head: true })
-        
-        if (patientsErr) throw patientsErr
         this.stats.activePatients = patientsCount || 0
 
-        // Fetch staff users count (Nurse and Staff roles)
-        const { count: staffCount, error: staffErr } = await supabase
+        const { count: staffCount } = await supabase
           .from('profiles')
           .select('*', { count: 'exact', head: true })
-          .in('role', ['Nurse', 'Staff'])
-        
-        if (staffErr) throw staffErr
+          .in('role', ['Nurse', 'Staff', 'Admin'])
         this.stats.staffUsers = staffCount || 0
 
-        // Fetch medicine count
-        const { count: medicineCount, error: medicineErr } = await supabase
+        const { count: medicineCount } = await supabase
           .from('medicine')
           .select('*', { count: 'exact', head: true })
-        
-        if (medicineErr) throw medicineErr
         this.stats.medicine = medicineCount || 0
 
-        // Fetch transactions count
-        const { count: transactionsCount, error: transactionsErr } = await supabase
+        const { count: transactionsCount } = await supabase
           .from('transactions')
           .select('*', { count: 'exact', head: true })
-        
-        if (transactionsErr) throw transactionsErr
         this.stats.transactions = transactionsCount || 0
 
       } catch (err) {
@@ -259,13 +299,347 @@ export default {
       }
     },
     
+    async fetchChartData() {
+      try {
+        const currentYear = 2025
+        await this.fetchPatientsData(currentYear)
+        await this.fetchDiseasesData(currentYear)
+        await this.fetchMedicinesData(currentYear)
+      } catch (err) {
+        console.error('Error fetching chart data:', err)
+      }
+    },
+    
+    async fetchPatientsData(year) {
+      try {
+        const studentCounts = [0,0,0,0,0,0,0,0,0,0,0,0]
+        const facultyCounts = [0,0,0,0,0,0,0,0,0,0,0,0]
+        const staffCounts = [0,0,0,0,0,0,0,0,0,0,0,0]
+        
+        const { data: patients, error } = await supabase
+          .from('patients')
+          .select('created_at, type')
+          .gte('created_at', `${year}-01-01`)
+          .lt('created_at', `${year + 1}-01-01`)
+        
+        if (error) throw error
+        
+        patients?.forEach(patient => {
+          const month = new Date(patient.created_at).getMonth()
+          const type = patient.type?.toLowerCase()
+          
+          if (type === 'student') studentCounts[month]++
+          else if (type === 'faculty') facultyCounts[month]++
+          else if (type === 'staff' || type === 'nurse') staffCounts[month]++
+        })
+        
+        this.chartData.students = studentCounts
+        this.chartData.faculties = facultyCounts
+        this.chartData.staffs = staffCounts
+        
+        console.log('✅ Patients data loaded:', { studentCounts, facultyCounts, staffCounts })
+        
+      } catch (err) {
+        console.error('❌ Error fetching patients data:', err)
+      }
+    },
+
+    async fetchDiseasesData(year) {
+  try {
+    const diseaseCounts = {}
+    const monthlyData = {}
+    
+    const { data: consultations, error } = await supabase
+      .from('consultations')
+      .select('consultation_date, diagnosis')
+      .gte('consultation_date', `${year}-01-01`)
+      .lt('consultation_date', `${year + 1}-01-01`)
+    
+    if (error) throw error
+    
+    console.log('📊 Raw consultations data:', consultations)
+    
+    if (!consultations || consultations.length === 0) {
+      this.chartData.diseases = [
+        { label: 'No Consultations Data', data: [0,0,0,0,0,0,0,0,0,0,0,0] }
+      ]
+      console.log('⚠️ No consultations found for year', year)
+      return
+    }
+    
+    consultations?.forEach(consultation => {
+      if (!consultation.diagnosis || consultation.diagnosis.trim() === '') return
+      
+      const month = new Date(consultation.consultation_date).getMonth()
+      const diagnosis = consultation.diagnosis.trim()
+      
+      if (!monthlyData[diagnosis]) {
+        monthlyData[diagnosis] = [0,0,0,0,0,0,0,0,0,0,0,0]
+      }
+      monthlyData[diagnosis][month]++
+      diseaseCounts[diagnosis] = (diseaseCounts[diagnosis] || 0) + 1
+    })
+    
+    console.log('📊 Disease counts:', diseaseCounts)
+    console.log('📊 Monthly disease data:', monthlyData)
+    
+    const topDiseases = Object.entries(diseaseCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([disease]) => disease)
+    
+    if (topDiseases.length === 0) {
+      this.chartData.diseases = [
+        { label: 'No Diseases Recorded', data: [0,0,0,0,0,0,0,0,0,0,0,0] }
+      ]
+    } else {
+      this.chartData.diseases = topDiseases.map(disease => ({
+        label: disease,
+        data: [...monthlyData[disease]]
+      }))
+    }
+    
+    console.log('✅ Diseases data loaded:', this.chartData.diseases)
+    
+  } catch (err) {
+    console.error('❌ Error fetching diseases data:', err)
+    this.chartData.diseases = [{ label: 'Error Loading Data', data: [0,0,0,0,0,0,0,0,0,0,0,0] }]
+  }
+},
+
+async fetchMedicinesData(year) {
+  try {
+    const medicineCounts = {}
+    const monthlyData = {}
+    
+    // Option 1: Get all transactions and check description/notes for medicine names
+    const { data: transactions, error: transError } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('type', 'Dispensed')
+      .gte('created_at', `${year}-01-01`)
+      .lt('created_at', `${year + 1}-01-01`)
+    
+    if (transError) {
+      console.error('Transaction error:', transError)
+      
+      // Fallback: Show medicines added to inventory instead
+      console.log('💊 Falling back to showing medicines added to inventory...')
+      
+      const { data: medicines, error: medError } = await supabase
+        .from('medicine')
+        .select('id, name, created_at')
+        .gte('created_at', `${year}-01-01`)
+        .lt('created_at', `${year + 1}-01-01`)
+      
+      if (medError) throw medError
+      
+      console.log('💊 Medicines from inventory:', medicines)
+      
+      if (!medicines || medicines.length === 0) {
+        this.chartData.medicines = [
+          { label: 'No Medicines Added', data: [0,0,0,0,0,0,0,0,0,0,0,0] }
+        ]
+        return
+      }
+      
+      medicines?.forEach(medicine => {
+        const month = new Date(medicine.created_at).getMonth()
+        const medicineName = medicine.name?.trim() || 'Unknown'
+        
+        if (!monthlyData[medicineName]) {
+          monthlyData[medicineName] = [0,0,0,0,0,0,0,0,0,0,0,0]
+        }
+        monthlyData[medicineName][month]++
+        medicineCounts[medicineName] = (medicineCounts[medicineName] || 0) + 1
+      })
+      
+    } else {
+      console.log('💊 Raw transactions data:', transactions)
+      
+      if (!transactions || transactions.length === 0) {
+        this.chartData.medicines = [
+          { label: 'No Medicines Dispensed', data: [0,0,0,0,0,0,0,0,0,0,0,0] }
+        ]
+        return
+      }
+      
+      transactions?.forEach(transaction => {
+        const month = new Date(transaction.created_at).getMonth()
+        
+        // Extract medicine name from description or notes
+        let medicineName = 'Unknown Medicine'
+        
+        if (transaction.description && transaction.description.trim() !== '') {
+          medicineName = transaction.description.trim()
+        } else if (transaction.notes && transaction.notes.trim() !== '') {
+          medicineName = transaction.notes.trim()
+        }
+        
+        if (!monthlyData[medicineName]) {
+          monthlyData[medicineName] = [0,0,0,0,0,0,0,0,0,0,0,0]
+        }
+        monthlyData[medicineName][month]++
+        medicineCounts[medicineName] = (medicineCounts[medicineName] || 0) + 1
+      })
+    }
+    
+    console.log('💊 Medicine counts:', medicineCounts)
+    console.log('💊 Monthly medicine data:', monthlyData)
+    
+    const topMedicines = Object.entries(medicineCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([medicine]) => medicine)
+    
+    if (topMedicines.length === 0) {
+      this.chartData.medicines = [
+        { label: 'No Data Available', data: [0,0,0,0,0,0,0,0,0,0,0,0] }
+      ]
+    } else {
+      this.chartData.medicines = topMedicines.map(medicine => ({
+        label: medicine,
+        data: [...monthlyData[medicine]]
+      }))
+    }
+    
+    console.log('✅ Medicines data loaded:', this.chartData.medicines)
+    
+  } catch (err) {
+    console.error('❌ Error fetching medicines data:', err)
+    this.chartData.medicines = [{ label: 'Error Loading Data', data: [0,0,0,0,0,0,0,0,0,0,0,0] }]
+  }
+},
+    
+   updateChartForTab(tab) {
+  if (!this.chart) {
+    console.warn('⚠️ Chart not initialized yet')
+    return
+  }
+  
+  console.log('🔄 Switching to tab:', tab)
+  
+  // Destroy the existing chart to prevent corruption
+  if (this.chart) {
+    this.chart.destroy()
+    this.chart = null
+  }
+  
+  // Wait for DOM to update
+  this.$nextTick(() => {
+    if (!this.$refs.chartCanvas) {
+      console.error('❌ Chart canvas not found')
+      return
+    }
+    
+    const ctx = this.$refs.chartCanvas.getContext('2d')
+    
+    const colors = [
+      { bg: 'rgba(255, 127, 80, 0.2)', border: 'rgb(255, 127, 80)' },
+      { bg: 'rgba(50, 205, 50, 0.2)', border: 'rgb(50, 205, 50)' },
+      { bg: 'rgba(30, 144, 255, 0.2)', border: 'rgb(30, 144, 255)' }
+    ]
+    
+    let datasets = []
+    
+    if (tab === 'patients') {
+      datasets = [
+        {
+          label: 'Students',
+          data: [...this.chartData.students],
+          backgroundColor: colors[0].bg,
+          borderColor: colors[0].border,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4
+        },
+        {
+          label: 'Faculties',
+          data: [...this.chartData.faculties],
+          backgroundColor: colors[1].bg,
+          borderColor: colors[1].border,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4
+        },
+        {
+          label: 'Staffs',
+          data: [...this.chartData.staffs],
+          backgroundColor: colors[2].bg,
+          borderColor: colors[2].border,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4
+        }
+      ]
+      console.log('📊 Patients datasets:', datasets)
+    } else if (tab === 'diseases') {
+      datasets = this.chartData.diseases.map((disease, index) => ({
+        label: disease.label,
+        data: [...disease.data],
+        backgroundColor: colors[index % 3].bg,
+        borderColor: colors[index % 3].border,
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4
+      }))
+      console.log('📊 Diseases datasets:', datasets)
+    } else if (tab === 'medicines') {
+      datasets = this.chartData.medicines.map((medicine, index) => ({
+        label: medicine.label,
+        data: [...medicine.data],
+        backgroundColor: colors[index % 3].bg,
+        borderColor: colors[index % 3].border,
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4
+      }))
+      console.log('📊 Medicines datasets:', datasets)
+    }
+    
+    // Create new chart with fresh data
+    this.chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+        datasets: datasets
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top'
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              stepSize: 5
+            }
+          }
+        }
+      }
+    })
+    
+    console.log('✅ Chart recreated successfully for tab:', tab)
+  })
+},
+    
     updateUserName(newName) {
       this.userName = newName
     },
+    
     initChart() {
       if (!this.$refs.chartCanvas) {
         console.error('Chart canvas not found')
         return
+      }
+      
+      if (this.chart) {
+        this.chart.destroy()
       }
       
       const ctx = this.$refs.chartCanvas.getContext('2d')
@@ -273,58 +647,34 @@ export default {
       this.chart = new Chart(ctx, {
         type: 'line',
         data: {
-          labels: ['January', 'February', 'March', 'April', 'May', 'June', 'July'],
+          labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
           datasets: [
             {
               label: 'Students',
-              data: [20, 35, 55, 60, 48, 22, 15],
-              backgroundColor: 'rgba(255, 127, 80, 0.1)',
+              data: [...this.chartData.students],
+              backgroundColor: 'rgba(255, 127, 80, 0.2)',
               borderColor: 'rgb(255, 127, 80)',
-              borderWidth: 3,
+              borderWidth: 2,
               fill: true,
-              tension: 0.4,
-              pointRadius: 5,
-              pointHoverRadius: 7,
-              pointBackgroundColor: 'rgb(255, 127, 80)',
-              pointBorderColor: '#fff',
-              pointBorderWidth: 2,
-              pointHoverBackgroundColor: '#fff',
-              pointHoverBorderColor: 'rgb(255, 127, 80)',
-              pointHoverBorderWidth: 2
+              tension: 0.4
             },
             {
               label: 'Faculties',
-              data: [25, 40, 65, 70, 58, 28, 20],
-              backgroundColor: 'rgba(50, 205, 50, 0.1)',
+              data: [...this.chartData.faculties],
+              backgroundColor: 'rgba(50, 205, 50, 0.2)',
               borderColor: 'rgb(50, 205, 50)',
-              borderWidth: 3,
+              borderWidth: 2,
               fill: true,
-              tension: 0.4,
-              pointRadius: 5,
-              pointHoverRadius: 7,
-              pointBackgroundColor: 'rgb(50, 205, 50)',
-              pointBorderColor: '#fff',
-              pointBorderWidth: 2,
-              pointHoverBackgroundColor: '#fff',
-              pointHoverBorderColor: 'rgb(50, 205, 50)',
-              pointHoverBorderWidth: 2
+              tension: 0.4
             },
             {
               label: 'Staffs',
-              data: [30, 48, 75, 82, 68, 35, 25],
-              backgroundColor: 'rgba(30, 144, 255, 0.1)',
+              data: [...this.chartData.staffs],
+              backgroundColor: 'rgba(30, 144, 255, 0.2)',
               borderColor: 'rgb(30, 144, 255)',
-              borderWidth: 3,
+              borderWidth: 2,
               fill: true,
-              tension: 0.4,
-              pointRadius: 5,
-              pointHoverRadius: 7,
-              pointBackgroundColor: 'rgb(30, 144, 255)',
-              pointBorderColor: '#fff',
-              pointBorderWidth: 2,
-              pointHoverBackgroundColor: '#fff',
-              pointHoverBorderColor: 'rgb(30, 144, 255)',
-              pointHoverBorderWidth: 2
+              tension: 0.4
             }
           ]
         },
@@ -334,83 +684,21 @@ export default {
           plugins: {
             legend: {
               display: true,
-              position: 'top',
-              align: 'end',
-              labels: {
-                usePointStyle: true,
-                padding: 20,
-                font: {
-                  size: 13,
-                  weight: '500',
-                  family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
-                },
-                boxWidth: 10,
-                boxHeight: 10,
-                color: '#64748b'
-              }
-            },
-            tooltip: {
-              enabled: true,
-              mode: 'index',
-              intersect: false,
-              backgroundColor: 'rgba(0, 0, 0, 0.85)',
-              titleColor: '#fff',
-              bodyColor: '#fff',
-              padding: 12,
-              cornerRadius: 8,
-              displayColors: true,
-              titleFont: {
-                size: 14,
-                weight: 'bold'
-              },
-              bodyFont: {
-                size: 13
-              }
+              position: 'top'
             }
           },
           scales: {
             y: {
               beginAtZero: true,
-              max: 100,
               ticks: {
-                stepSize: 20,
-                font: {
-                  size: 12
-                },
-                color: '#64748b',
-                callback: function(value) {
-                  return value
-                }
-              },
-              grid: {
-                color: 'rgba(100, 116, 139, 0.1)',
-                drawBorder: false
-              },
-              border: {
-                display: false
-              }
-            },
-            x: {
-              ticks: {
-                font: {
-                  size: 12
-                },
-                color: '#64748b'
-              },
-              grid: {
-                display: false
-              },
-              border: {
-                display: false
+                stepSize: 5
               }
             }
-          },
-          interaction: {
-            mode: 'index',
-            intersect: false
           }
         }
       })
+      
+      console.log('✅ Chart initialized')
     }
   }
 }
@@ -514,7 +802,7 @@ export default {
   background: white;
   padding: 12px 24px;
   display: flex;
-  justify-content: space-between;
+  
   align-items: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   position: sticky;

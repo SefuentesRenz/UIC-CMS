@@ -1,5 +1,12 @@
 <template>
   <div class="signup-container">
+    <!-- Notification Modal -->
+    <NotificationModal 
+      :show="showNotification" 
+      :message="notificationMessage" 
+      :type="notificationType"
+      @close="showNotification = false" />
+    
     <!-- Left side with logo and branding -->
     <div class="left-section">
       <div class="logo-circle">
@@ -143,9 +150,13 @@
 <script>
 // Import Supabase client for authentication and database operations
 import { supabase } from '@/lib/Supabase.js'
+import NotificationModal from './NotificationModal.vue'
 
 export default {
   name: 'SignUpPage',
+  components: {
+    NotificationModal
+  },
   data() {
     return {
       accountType: 'Student', // Default to Student
@@ -157,7 +168,10 @@ export default {
       confirmPassword: '',
       showPassword: false,
       showConfirmPassword: false,
-      isLoading: false // Track loading state during signup
+      isLoading: false, // Track loading state during signup
+      showNotification: false,
+      notificationMessage: '',
+      notificationType: 'info'
     }
   },
   methods: {
@@ -179,41 +193,45 @@ export default {
       
       // Validate that all required fields are filled
       if (!this.name || !this.email || !this.schoolId || !this.password || !this.confirmPassword) {
-        alert('Please fill in all fields')
+        this.showNotificationModal('Please fill in all fields', 'warning')
         return
       }
 
       // Validate role selection for Admin accounts
       if (this.accountType === 'Admin' && !this.role) {
-        alert('Please select your role (Nurse, Staff, or Admin)')
+        this.showNotificationModal('Please select your role (Nurse, Staff, or Admin)', 'warning')
         return
       }
 
       // Validate passwords match
       if (this.password !== this.confirmPassword) {
-        alert('Passwords do not match!')
+        this.showNotificationModal('Passwords do not match!', 'warning')
         return
       }
 
       // Validate password strength (minimum 6 characters for Supabase)
       if (this.password.length < 6) {
-        alert('Password must be at least 6 characters long')
+        this.showNotificationModal('Password must be at least 6 characters long', 'warning')
         return
       }
 
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (!emailRegex.test(this.email)) {
-        alert('Please enter a valid email address')
+        this.showNotificationModal('Please enter a valid email address', 'warning')
         return
       }
 
       // ============================================
-      // Step 2: Create auth user with Supabase
+      // Step 2: Clear any existing session and create auth user
       // ============================================
       
       try {
         this.isLoading = true // Show loading state
+        
+        // Clear any existing session first
+        console.log('Clearing any existing session...')
+        await supabase.auth.signOut()
         
         // Determine the role based on account type
         const userRole = this.accountType === 'Student' ? 'Student' : this.role
@@ -242,14 +260,14 @@ export default {
         // Handle authentication errors
         if (authError) {
           console.error('Auth signup error:', authError)
-          alert(`Sign-up failed: ${authError.message}`)
+          this.showNotificationModal(`Sign-up failed: ${authError.message}`, 'error')
           this.isLoading = false
           return
         }
 
         // Check if user was created successfully
         if (!authData.user) {
-          alert('Sign-up failed: No user data returned')
+          this.showNotificationModal('Sign-up failed: No user data returned', 'error')
           this.isLoading = false
           return
         }
@@ -258,31 +276,60 @@ export default {
         console.log('Profile automatically created via database trigger')
 
         // ============================================
-        // Step 3: Show success and redirect based on account type
+        // Step 3: Verify session is established
         // ============================================
-        // Note: Profile is now created automatically by the database trigger
-        // No need for manual insertion anymore
+        // Wait a moment for the profile to be created by the trigger
+        await new Promise(resolve => setTimeout(resolve, 500))
         
-        alert(`Account created successfully as ${this.accountType}!`)
+        // Verify the session is active for the new user
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
         
-        // Redirect based on account type
-        if (this.accountType === 'Student') {
-          console.log('Redirecting to Student Home...')
-          this.$router.push('/student-home')
-        } else {
-          // Admin (Nurse/Staff/Admin) goes to Dashboard
-          console.log('Redirecting to Dashboard...')
-          this.$router.push('/dashboard')
+        if (sessionError || !session) {
+          console.error('Session verification failed:', sessionError)
+          this.showNotificationModal('Account created but session failed. Please login.', 'warning')
+          this.isLoading = false
+          this.$router.push('/login')
+          return
         }
+        
+        console.log('Session verified for user:', session.user.id)
+        
+        // ============================================
+        // Step 4: Show success and redirect based on account type
+        // ============================================
+        
+        this.showNotificationModal(`Account created successfully as ${this.accountType}!`, 'success')
+        
+        // Redirect based on account type after a brief delay
+        setTimeout(() => {
+          if (this.accountType === 'Student') {
+            console.log('Redirecting to Student Home...')
+            this.$router.push('/student-home')
+          } else {
+            // Admin (Nurse/Staff/Admin) goes to Dashboard
+            console.log('Redirecting to Dashboard...')
+            this.$router.push('/dashboard')
+          }
+        }, 1500)
+        
         
       } catch (error) {
         // Handle any unexpected errors
         console.error('Unexpected error during signup:', error)
-        alert(`An unexpected error occurred: ${error.message}`)
+        this.showNotificationModal(`An unexpected error occurred: ${error.message}`, 'error')
       } finally {
         // Always reset loading state
         this.isLoading = false
       }
+    },
+    
+    /**
+     * Show notification modal
+     */
+    showNotificationModal(message, type = 'info') {
+      this.notificationMessage = message
+      this.notificationType = type
+      this.showNotification = true
     }
   }
 }

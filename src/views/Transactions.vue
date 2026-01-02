@@ -37,6 +37,15 @@
           </i>
           <span>Medicine</span>
         </router-link>
+        <router-link to="/consultations" class="nav-item">
+          <i class="icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M19 3H5C3.89543 3 3 3.89543 3 5V19C3 20.1046 3.89543 21 5 21H19C20.1046 21 21 20.1046 21 19V5C21 3.89543 20.1046 3 19 3Z" stroke="currentColor" stroke-width="2" fill="none"/>
+              <path d="M9 7H15M9 12H15M9 17H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </i>
+          <span>Consultations</span>
+        </router-link>
         <router-link to="/transactions" class="nav-item active">
           <i class="icon" aria-hidden="true">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -65,11 +74,18 @@
       <!-- Header -->
       <header class="header">
         
-        <div class="user-profile" @click="showProfileModal = true" style="cursor: pointer;">
-          <img src="@/assets/NurseProfile.jpg" alt="Admin" class="user-avatar" />
-          <span class="user-greeting">Hi, <strong>Admin</strong></span>
+         <div class="user-profile" @click="showProfileModal = true" style="cursor: pointer;">
+          <img src="@/assets/NurseProfile.jpg" alt="User Avatar" class="user-avatar" />
+          <span class="user-greeting">Hi, <strong>{{ userName }}</strong></span>
         </div>
       </header>
+
+      <!-- Notification Modal -->
+      <NotificationModal 
+        :show="showNotification" 
+        :message="notificationMessage" 
+        :type="notificationType"
+        @close="showNotification = false" />
 
       <!-- Profile Modal -->
       <Profile :show="showProfileModal" @close="showProfileModal = false" />
@@ -176,6 +192,7 @@
 import Profile from '../components/Profile.vue'
 import AddTransaction from '../components/AddTransaction.vue'
 import EditTransaction from '../components/EditTransaction.vue'
+import NotificationModal from '../components/NotificationModal.vue'
 import NurseProfileImg from '@/assets/NurseProfile.jpg'
 
 export default {
@@ -183,7 +200,8 @@ export default {
   components: {
     Profile,
     AddTransaction,
-    EditTransaction
+    EditTransaction,
+    NotificationModal
   },
   data() {
     return {
@@ -193,7 +211,14 @@ export default {
       showAddTransactionModal: false,
       showEditTransactionModal: false,
       selectedTransaction: {},
-      transactions: [
+      userName: 'User',
+      transactions: [],
+      isLoading: false,
+      error: null,
+      showNotification: false,
+      notificationMessage: '',
+      notificationType: 'info',
+      dummyTransactions: [
         {
           id: 1,
           patientAvatar: NurseProfileImg,
@@ -252,6 +277,221 @@ export default {
       ]
     }
   },
+  async created() {
+    await this.fetchUserData()
+    await this.fetchTransactions()
+  },
+  methods: {
+    async fetchUserData() {
+      try {
+        const { supabase } = await import('../supabaseClient')
+        const { data: { session }, error: sessionErr } = await supabase.auth.getSession()
+        if (sessionErr) throw sessionErr
+        
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', session.user.id)
+            .single()
+            
+          this.userName = profile?.full_name || session.user.email?.split('@')[0] || 'User'
+        }
+      } catch (err) {
+        console.error('Error fetching user data:', err)
+      }
+    },
+    async fetchTransactions() {
+      console.log('=== FETCHING TRANSACTIONS FROM SUPABASE ===')
+      this.isLoading = true
+      this.error = null
+      
+      try {
+        const { supabase } = await import('../supabaseClient')
+        const { data, error: fetchError } = await supabase
+          .from('transactions')
+          .select('*')
+          .order('date', { ascending: false })
+          .order('time_start', { ascending: false })
+        
+        if (fetchError) {
+          console.error('❌ Error fetching transactions:', fetchError)
+          this.error = fetchError.message
+          throw fetchError
+        }
+        
+        console.log(`✅ Successfully fetched ${data.length} transactions`)
+        this.transactions = data.map(t => ({
+          id: t.id,
+          patientAvatar: NurseProfileImg,
+          patientName: t.patient_name,
+          purpose: t.purpose,
+          date: t.date,
+          timeStart: t.time_start,
+          timeEnd: t.time_end,
+          timeSpent: t.time_spent,
+          status: t.status,
+          notes: t.notes
+        }))
+      } catch (err) {
+        console.error('❌ Failed to fetch transactions:', err)
+        this.error = err.message
+      } finally {
+        this.isLoading = false
+      }
+    },
+    
+    async handleAddTransaction(newTransaction) {
+      console.log('=== ADDING TRANSACTION TO SUPABASE ===')
+      this.isLoading = true
+      
+      try {
+        const { supabase } = await import('../supabaseClient')
+        
+        const transactionData = {
+          patient_name: newTransaction.patientName,
+          purpose: newTransaction.purpose,
+          date: newTransaction.date,
+          time_start: newTransaction.timeStart,
+          time_end: newTransaction.timeEnd,
+          time_spent: newTransaction.timeSpent,
+          status: newTransaction.status || 'Done',
+          notes: newTransaction.notes || ''
+        }
+        
+        console.log('📤 Sending to Supabase:', transactionData)
+        
+        const { data, error: insertError } = await supabase
+          .from('transactions')
+          .insert([transactionData])
+          .select()
+        
+        if (insertError) {
+          console.error('❌ Error adding transaction:', insertError)
+          throw insertError
+        }
+        
+        console.log('✅ Transaction added successfully:', data)
+        
+        this.showNotificationModal('Transaction added successfully!', 'success')
+        await this.fetchTransactions()
+        this.showAddTransactionModal = false
+      } catch (err) {
+        console.error('❌ Failed to add transaction:', err)
+        this.showNotificationModal(`Failed to add transaction: ${err.message}`, 'error')
+      } finally {
+        this.isLoading = false
+      }
+    },
+    
+    async handleUpdateTransaction(updatedTransaction) {
+      console.log('=== UPDATING TRANSACTION IN SUPABASE ===')
+      this.isLoading = true
+      
+      try {
+        const { supabase } = await import('../supabaseClient')
+        
+        const transactionData = {
+          patient_name: updatedTransaction.patientName,
+          purpose: updatedTransaction.purpose,
+          date: updatedTransaction.date,
+          time_start: updatedTransaction.timeStart,
+          time_end: updatedTransaction.timeEnd,
+          time_spent: updatedTransaction.timeSpent,
+          status: updatedTransaction.status,
+          notes: updatedTransaction.notes || ''
+        }
+        
+        console.log(`📤 Updating transaction ID ${updatedTransaction.id}:`, transactionData)
+        
+        const { data, error: updateError } = await supabase
+          .from('transactions')
+          .update(transactionData)
+          .eq('id', updatedTransaction.id)
+          .select()
+        
+        if (updateError) {
+          console.error('❌ Error updating transaction:', updateError)
+          throw updateError
+        }
+        
+        console.log('✅ Transaction updated successfully:', data)
+        
+        this.showNotificationModal('Transaction updated successfully!', 'success')
+        await this.fetchTransactions()
+        this.showEditTransactionModal = false
+      } catch (err) {
+        console.error('❌ Failed to update transaction:', err)
+        this.showNotificationModal(`Failed to update transaction: ${err.message}`, 'error')
+      } finally {
+        this.isLoading = false
+      }
+    },
+    
+    async handleDeleteTransaction(transactionId) {
+      console.log(`=== DELETING TRANSACTION ID ${transactionId} FROM SUPABASE ===`)
+      this.isLoading = true
+      
+      try {
+        const { supabase } = await import('../supabaseClient')
+        
+        const { error: deleteError } = await supabase
+          .from('transactions')
+          .delete()
+          .eq('id', transactionId)
+        
+        if (deleteError) {
+          console.error('❌ Error deleting transaction:', deleteError)
+          throw deleteError
+        }
+        
+        console.log('✅ Transaction deleted successfully')
+        
+        this.showNotificationModal('Transaction deleted successfully!', 'success')
+        await this.fetchTransactions()
+        this.showEditTransactionModal = false
+      } catch (err) {
+        console.error('❌ Failed to delete transaction:', err)
+        this.showNotificationModal(`Failed to delete transaction: ${err.message}`, 'error')
+      } finally {
+        this.isLoading = false
+      }
+    },
+    
+    viewTransaction(transaction) {
+      this.selectedTransaction = { ...transaction }
+      this.showEditTransactionModal = true
+    },
+    
+    addTransaction() {
+      this.showAddTransactionModal = true
+    },
+    
+    showNotificationModal(message, type = 'info') {
+      this.notificationMessage = message
+      this.notificationType = type
+      this.showNotification = true
+    },
+    async fetchUserData() {
+      try {
+        const { supabase } = await import('../supabaseClient')
+        const { data: { session }, error: sessionErr } = await supabase.auth.getSession()
+        if (sessionErr) throw sessionErr
+        
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', session.user.id)
+            .single()
+            
+          this.userName = profile?.full_name || session.user.email?.split('@')[0] || 'User'
+        }
+      } catch (err) {
+        console.error('Error fetching user data:', err)
+      }
+    }
+  },
   computed: {
     filteredTransactions() {
       let filtered = this.transactions
@@ -270,39 +510,9 @@ export default {
       return filtered
     }
   },
-  methods: {
-    addTransaction() {
-      this.showAddTransactionModal = true
-    },
-    handleAddTransaction(newTransaction) {
-      // Add the new transaction to the transactions array
-      this.transactions.unshift(newTransaction)
-      this.showAddTransactionModal = false
-      console.log('New transaction added:', newTransaction)
-    },
-    viewTransaction(transaction) {
-      this.selectedTransaction = { ...transaction }
-      this.showEditTransactionModal = true
-      console.log('Viewing/Editing transaction:', transaction)
-    },
-    handleUpdateTransaction(updatedTransaction) {
-      // Find and update the transaction in the array
-      const index = this.transactions.findIndex(t => t.id === updatedTransaction.id)
-      if (index !== -1) {
-        this.transactions.splice(index, 1, updatedTransaction)
-      }
-      this.showEditTransactionModal = false
-      console.log('Transaction updated:', updatedTransaction)
-    },
-    handleDeleteTransaction(transactionId) {
-      // Remove the transaction from the array
-      const index = this.transactions.findIndex(t => t.id === transactionId)
-      if (index !== -1) {
-        this.transactions.splice(index, 1)
-      }
-      this.showEditTransactionModal = false
-      console.log('Transaction deleted:', transactionId)
-    }
+  async created() {
+    await this.fetchUserData()
+    await this.fetchTransactions()
   }
 }
 </script>
@@ -443,9 +653,10 @@ export default {
 
 .user-profile {
   display: flex;
+  justify-content: flex-end;
   align-items: center;
   gap: 12px;
-  margin-left: auto;
+  margin-left: auto; /* push user profile to the right side of the header */
 }
 
 .user-avatar {

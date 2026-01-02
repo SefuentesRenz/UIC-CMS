@@ -1,5 +1,12 @@
 <template>
   <div v-if="show" class="modal-overlay" @click.self="closeModal">
+    <!-- Notification Modal -->
+    <NotificationModal 
+      :show="showNotification" 
+      :message="notificationMessage" 
+      :type="notificationType"
+      @close="showNotification = false" />
+    
     <div class="modal-container">
       <div class="modal-header">
         <div class="header-content">
@@ -84,8 +91,13 @@
 </template>
 
 <script>
+import NotificationModal from './NotificationModal.vue'
+
 export default {
-  name: 'AddMedicineModal',
+  name: 'AddMedicine',
+  components: {
+    NotificationModal
+  },
   props: {
     show: {
       type: Boolean,
@@ -99,7 +111,10 @@ export default {
         dateAdded: '',
         quantity: '',
         expirationDate: ''
-      }
+      },
+      showNotification: false,
+      notificationMessage: '',
+      notificationType: 'info'
     }
   },
   methods: {
@@ -119,10 +134,12 @@ export default {
         })
         
         // Show success message
-        alert('Medicine added successfully!')
+        this.showNotificationModal('Medicine added successfully!', 'success')
         
-        // Reset form and close modal
-        this.closeModal()
+        // Reset form and close modal after delay
+        setTimeout(() => {
+          this.closeModal()
+        }, 1500)
       }
     },
     validateForm() {
@@ -130,27 +147,27 @@ export default {
       
       for (let field of requiredFields) {
         if (!this.formData[field] || this.formData[field] === '') {
-          alert('Please fill in all required fields')
+          this.showNotificationModal('Please fill in all required fields', 'warning')
           return false
         }
       }
 
       // Validate quantity is positive
       if (this.formData.quantity <= 0) {
-        alert('Quantity must be greater than 0')
+        this.showNotificationModal('Quantity must be greater than 0', 'warning')
         return false
       }
 
       // Validate expiration date is in the future
       const today = new Date().toISOString().split('T')[0]
       if (this.formData.expirationDate <= today) {
-        alert('Expiration date must be in the future')
+        this.showNotificationModal('Expiration date must be in the future', 'warning')
         return false
       }
 
       // Validate date added is not in the future
       if (this.formData.dateAdded > today) {
-        alert('Date added cannot be in the future')
+        this.showNotificationModal('Date added cannot be in the future', 'warning')
         return false
       }
       
@@ -163,6 +180,11 @@ export default {
         quantity: '',
         expirationDate: ''
       }
+    },
+    showNotificationModal(message, type = 'info') {
+      this.notificationMessage = message
+      this.notificationType = type
+      this.showNotification = true
     }
   },
   mounted() {

@@ -37,6 +37,15 @@
           </i>
           <span>Medicine</span>
         </router-link>
+        <router-link to="/consultations" class="nav-item">
+          <i class="icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M19 3H5C3.89543 3 3 3.89543 3 5V19C3 20.1046 3.89543 21 5 21H19C20.1046 21 21 20.1046 21 19V5C21 3.89543 20.1046 3 19 3Z" stroke="currentColor" stroke-width="2" fill="none"/>
+              <path d="M9 7H15M9 12H15M9 17H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </i>
+          <span>Consultations</span>
+        </router-link>
         <router-link to="/transactions" class="nav-item">
           <i class="icon" aria-hidden="true">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -66,11 +75,18 @@
       <header class="header">
         
         <div class="user-profile" @click="showProfileModal = true" style="cursor: pointer;">
-          <img src="@/assets/NurseProfile.jpg" alt="Admin" class="user-avatar" />
-          <span class="user-greeting">Hi, <strong>Admin</strong></span>
+          <img src="@/assets/NurseProfile.jpg" alt="User Avatar" class="user-avatar" />
+          <span class="user-greeting">Hi, <strong>{{ userName }}</strong></span>
         </div>
       </header>
 
+      <!-- Notification Modal -->
+      <NotificationModal 
+        :show="showNotification" 
+        :message="notificationMessage" 
+        :type="notificationType"
+        @close="showNotification = false" />
+      
       <!-- Profile Modal -->
       <Profile :show="showProfileModal" @close="showProfileModal = false" />
 
@@ -199,6 +215,27 @@ export default {
     const staff = ref([])
     const loading = ref(false)
     const error = ref(null)
+    const userName = ref('User')
+    
+    // Fetch user data
+    const fetchUserData = async () => {
+      try {
+        const { data: { session }, error: sessionErr } = await supabase.auth.getSession()
+        if (sessionErr) throw sessionErr
+        
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', session.user.id)
+            .single()
+            
+          userName.value = profile?.full_name || session.user.email?.split('@')[0] || 'User'
+        }
+      } catch (err) {
+        console.error('Error fetching user data:', err)
+      }
+    }
 
     // 🟢 FETCH STAFF FROM SUPABASE (Nurse and Staff roles only)
     const getStaff = async () => {
@@ -235,10 +272,16 @@ export default {
         }))
       } catch (err) {
         console.error('❌ Failed to fetch staff:', err)
-        alert(`Failed to fetch staff: ${err.message}`)
+        showNotificationModal(`Failed to fetch staff: ${err.message}`, 'error')
       } finally {
         loading.value = false
       }
+    }
+    
+    const showNotificationModal = (message, type = 'info') => {
+      notificationMessage.value = message
+      notificationType.value = type
+      showNotification.value = true
     }
 
     // Computed property for filtered staff
@@ -276,24 +319,25 @@ export default {
         status: newStaff.status
       }
       staff.value.push(staffMember)
-      alert(`Staff user ${newStaff.name} has been added successfully!`)
+      showNotificationModal(`Staff user ${newStaff.name} has been added successfully!`, 'success')
     }
 
     const editStaff = (staffMember) => {
       console.log('Edit staff:', staffMember)
-      alert(`Editing staff user: ${staffMember.name}`)
+      showNotificationModal(`Editing staff user: ${staffMember.name}`, 'info')
       // TODO: Implement edit staff modal/form
     }
 
     const viewStaff = (staffMember) => {
       console.log('View staff:', staffMember)
-      alert(`Viewing details for staff user: ${staffMember.name} - ${staffMember.role}`)
+      showNotificationModal(`Viewing details for staff user: ${staffMember.name} - ${staffMember.role}`, 'info')
       // TODO: Implement view staff details modal/page
     }
 
     // Fetch staff on component mount
     onMounted(async () => {
       console.log('=== CLINIC STAFF USERS COMPONENT MOUNTED ===')
+      await fetchUserData()
       await getStaff()
     })
 
@@ -304,6 +348,7 @@ export default {
       showProfileModal,
       showAddStaffModal,
       staff,
+      userName,
       loading,
       error,
       filteredStaff,
@@ -472,6 +517,8 @@ export default {
   justify-content: space-between;
   align-items: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  position: sticky;
+  top: 0;
   z-index: 100;
 }
 
@@ -505,9 +552,10 @@ export default {
 
 .user-profile {
   display: flex;
+  justify-content: flex-end;
   align-items: center;
   gap: 12px;
-  margin-left: auto;
+  margin-left: auto; /* push user profile to the right side of the header */
 }
 
 .user-avatar {

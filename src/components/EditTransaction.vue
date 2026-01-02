@@ -1,5 +1,12 @@
 <template>
   <div v-if="show" class="modal-overlay" @click.self="closeModal">
+    <!-- Notification Modal -->
+    <NotificationModal 
+      :show="showNotification" 
+      :message="notificationMessage" 
+      :type="notificationType"
+      @close="showNotification = false" />
+    
     <div class="modal-container">
       <div class="modal-header">
         <div class="header-content">
@@ -152,8 +159,13 @@
 </template>
 
 <script>
+import NotificationModal from './NotificationModal.vue'
+
 export default {
   name: 'EditTransactionModal',
+  components: {
+    NotificationModal
+  },
   props: {
     show: {
       type: Boolean,
@@ -172,9 +184,12 @@ export default {
         date: '',
         timeStart: '',
         timeEnd: '',
-        status: '',
+        status: 'Done',
         notes: ''
-      }
+      },
+      showNotification: false,
+      notificationMessage: '',
+      notificationType: 'info'
     }
   },
   computed: {
@@ -235,18 +250,16 @@ export default {
           timeSpent: this.timeSpent
         })
         
-        // Show success message
-        alert('Transaction updated successfully!')
-        
-        // Close modal
-        this.closeModal()
+        // Show updating message - parent will handle success and closing
+        this.showNotificationModal('Updating transaction...', 'info')
       }
     },
     confirmDelete() {
-      if (confirm(`Are you sure you want to delete this transaction for ${this.formData.patientName}?`)) {
+      // Show confirmation using NotificationModal
+      const confirmed = confirm(`Are you sure you want to delete this transaction for ${this.formData.patientName}?`)
+      if (confirmed) {
         this.$emit('delete-transaction', this.transaction.id)
-        alert('Transaction deleted successfully!')
-        this.closeModal()
+        this.showNotificationModal('Deleting transaction...', 'warning')
       }
     },
     validateForm() {
@@ -254,7 +267,7 @@ export default {
       
       for (let field of requiredFields) {
         if (!this.formData[field] || this.formData[field] === '') {
-          alert('Please fill in all required fields')
+          this.showNotificationModal('Please fill in all required fields', 'warning')
           return false
         }
       }
@@ -264,18 +277,38 @@ export default {
       const end = new Date(`2000-01-01 ${this.formData.timeEnd}`)
       
       if (end <= start) {
-        alert('Time End must be after Time Start')
+        this.showNotificationModal('Time End must be after Time Start', 'warning')
         return false
       }
 
-      // Validate date is not in the future
-      const today = new Date().toISOString().split('T')[0]
-      if (this.formData.date > today) {
-        alert('Transaction date cannot be in the future')
+      // Validate date and time are not in the future
+      const selectedDate = new Date(this.formData.date)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0) // Reset time to midnight for date comparison
+      
+      // Only check if the date is actually in the future (beyond today)
+      if (selectedDate > today) {
+        this.showNotificationModal('Transaction date cannot be in the future', 'warning')
         return false
       }
       
+      // If the date is today, check if the time is in the future
+      if (selectedDate.toDateString() === today.toDateString()) {
+        const now = new Date()
+        const selectedDateTime = new Date(`${this.formData.date} ${this.formData.timeEnd}`)
+        
+        if (selectedDateTime > now) {
+          this.showNotificationModal('Transaction time cannot be in the future', 'warning')
+          return false
+        }
+      }
+      
       return true
+    },
+    showNotificationModal(message, type = 'info') {
+      this.notificationMessage = message
+      this.notificationType = type
+      this.showNotification = true
     }
   }
 }

@@ -9,15 +9,15 @@
       </div>
       
       <nav class="sidebar-nav">
-        <a href="#" class="nav-item active" @click.prevent="activeTab = 'profile'">
+        <a href="#" :class="['nav-item', { active: activeTab === 'profile' }]" @click.prevent="activeTab = 'profile'">
           <i class="icon">👤</i>
           <span>My Profile</span>
         </a>
-        <a href="#" class="nav-item" @click.prevent="activeTab = 'history'">
+        <a href="#" :class="['nav-item', { active: activeTab === 'history' }]" @click.prevent="activeTab = 'history'">
           <i class="icon">🏥</i>
           <span>Medical History</span>
         </a>
-        <a href="#" class="nav-item" @click.prevent="activeTab = 'appointments'">
+        <a href="#" :class="['nav-item', { active: activeTab === 'appointments' }]" @click.prevent="activeTab = 'appointments'">
           <i class="icon">📅</i>
           <span>Appointments</span>
         </a>
@@ -31,6 +31,13 @@
       </div>
     </aside>
 
+    <!-- Notification Modal -->
+    <NotificationModal 
+      :show="showNotification" 
+      :message="notificationMessage" 
+      :type="notificationType"
+      @close="showNotification = false" />
+    
     <!-- Main Content -->
     <main class="main-content">
       <!-- Header -->
@@ -75,6 +82,10 @@
                   {{ userProfile?.status || 'Active' }}
                 </span>
               </div>
+              <button @click="showEditModal = true" class="edit-profile-btn">
+                <span class="icon">✏️</span>
+                Edit Profile
+              </button>
             </div>
 
             <div class="profile-details">
@@ -115,7 +126,7 @@
         <!-- Medical History Tab -->
         <div v-show="activeTab === 'history'" class="tab-content">
           <div class="history-header">
-            <h2>Medical Consultation History</h2>
+          
             <p>Total Consultations: <strong>{{ consultations.length }}</strong></p>
           </div>
 
@@ -138,7 +149,7 @@
               </div>
 
               <div class="consultation-body">
-                <div class="consultation-item">
+                <div class="consultation-item" v-if="consultation.chief_complaint">
                   <strong>Chief Complaint:</strong>
                   <p>{{ consultation.chief_complaint }}</p>
                 </div>
@@ -153,10 +164,19 @@
                 <div class="consultation-item" v-if="consultation.prescription">
                   <strong>Prescription:</strong>
                   <p>{{ consultation.prescription }}</p>
+                  <span v-if="consultation.quantity" class="quantity-badge">Qty: {{ consultation.quantity }}</span>
+                </div>
+                <div class="consultation-item" v-if="consultation.notes">
+                  <strong>Notes:</strong>
+                  <p>{{ consultation.notes }}</p>
+                </div>
+                <div class="consultation-item" v-if="consultation.remarks">
+                  <strong>Remarks:</strong>
+                  <p>{{ consultation.remarks }}</p>
                 </div>
 
                 <!-- Vital Signs -->
-                <div class="vital-signs" v-if="consultation.temperature || consultation.blood_pressure">
+                <div class="vital-signs" v-if="consultation.temperature || consultation.blood_pressure || consultation.heart_rate || consultation.weight">
                   <strong>Vital Signs:</strong>
                   <div class="vitals-grid">
                     <span v-if="consultation.temperature">🌡️ {{ consultation.temperature }}°C</span>
@@ -168,6 +188,9 @@
 
                 <div class="consultation-footer">
                   <span class="attended-by">Attended by: {{ consultation.attended_by_name || 'Clinic Staff' }}</span>
+                  <span v-if="consultation.follow_up_date" class="follow-up">
+                    Follow-up: {{ formatDate(consultation.follow_up_date) }}
+                  </span>
                 </div>
               </div>
             </div>
@@ -184,6 +207,117 @@
         </div>
       </div>
     </main>
+
+    <!-- Edit Profile Modal -->
+    <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
+      <div class="modal-content edit-profile-modal">
+        <div class="modal-header">
+          <h2>Complete Your Profile</h2>
+          <button @click="showEditModal = false" class="close-btn">×</button>
+        </div>
+        
+        <div class="modal-body">
+          <form @submit.prevent="saveProfile" class="profile-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Full Name <span class="required">*</span></label>
+                <input 
+                  v-model="editForm.full_name" 
+                  type="text" 
+                  required 
+                  placeholder="Enter your full name"
+                />
+              </div>
+              
+              <div class="form-group">
+                <label>Contact Number <span class="required">*</span></label>
+                <input 
+                  v-model="editForm.contact_number" 
+                  type="tel" 
+                  required
+                  placeholder="09XX-XXX-XXXX"
+                  pattern="[0-9]{11}"
+                  maxlength="11"
+                />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>College/Department <span class="required">*</span></label>
+                <select v-model="editForm.college_department" required>
+                  <option value="">Select College/Department</option>
+                  <option value="College of Engineering">College of Engineering</option>
+                  <option value="College of Science">College of Science</option>
+                  <option value="College of Arts and Letters">College of Arts and Letters</option>
+                  <option value="College of Business Administration">College of Business Administration</option>
+                  <option value="College of Education">College of Education</option>
+                  <option value="College of Architecture and Fine Arts">College of Architecture and Fine Arts</option>
+                  <option value="College of Social Sciences and Development">College of Social Sciences and Development</option>
+                  <option value="College of Nursing">College of Nursing</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>Program <span class="required">*</span></label>
+                <input 
+                  v-model="editForm.program" 
+                  type="text" 
+                  required
+                  placeholder="e.g., BS Computer Science"
+                />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Year & Section <span class="required">*</span></label>
+                <select v-model="editForm.year_section" required>
+                  <option value="">Select Year & Section</option>
+                  <option value="1st Year">1st Year</option>
+                  <option value="2nd Year">2nd Year</option>
+                  <option value="3rd Year">3rd Year</option>
+                  <option value="4th Year">4th Year</option>
+                  <option value="5th Year">5th Year</option>
+                  <option value="Graduate">Graduate</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>Sex <span class="required">*</span></label>
+                <select v-model="editForm.sex" required>
+                  <option value="">Select Sex</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Type <span class="required">*</span></label>
+                <select v-model="editForm.type" required>
+                  <option value="">Select Type</option>
+                  <option value="Student">Student</option>
+                  <option value="Faculty">Faculty</option>
+                  <option value="Staff">Staff</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="button" @click="showEditModal = false" class="btn-cancel">
+                Cancel
+              </button>
+              <button type="submit" class="btn-save" :disabled="isSaving">
+                {{ isSaving ? 'Saving...' : 'Save Profile' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -192,9 +326,13 @@ import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../supabaseClient'
 import { useRouter } from 'vue-router'
 import NurseProfileImg from '@/assets/NurseProfile.jpg'
+import NotificationModal from '../components/NotificationModal.vue'
 
 export default {
   name: 'StudentHome',
+  components: {
+    NotificationModal
+  },
   setup() {
     const router = useRouter()
     
@@ -205,6 +343,24 @@ export default {
     const loading = ref(true)
     const error = ref(null)
     const userAvatar = ref(NurseProfileImg)
+    
+    // Notification modal state
+    const showNotification = ref(false)
+    const notificationMessage = ref('')
+    const notificationType = ref('info')
+    
+    // Edit profile modal state
+    const showEditModal = ref(false)
+    const isSaving = ref(false)
+    const editForm = ref({
+      full_name: '',
+      contact_number: '',
+      college_department: '',
+      program: '',
+      year_section: '',
+      sex: '',
+      type: ''
+    })
 
     // Computed properties
     const pageTitle = computed(() => {
@@ -232,22 +388,38 @@ export default {
       error.value = null
 
       try {
-        // Get current user
-        const { data: { user }, error: userError } = await supabase.auth.getUser()
+        // Force refresh the session to get the most current authenticated user
+        console.log('Refreshing session to get current user...')
+        const { data: { session }, error: refreshError } = await supabase.auth.refreshSession()
         
-        if (userError || !user) {
-          console.error('Not authenticated:', userError)
-          router.push('/login')
-          return
+        let currentUser = null
+        
+        if (refreshError || !session || !session.user) {
+          console.warn('Session refresh failed, trying getSession:', refreshError)
+          
+          // Fallback to getSession if refresh fails
+          const { data: { session: fallbackSession }, error: sessionError } = await supabase.auth.getSession()
+          
+          if (sessionError || !fallbackSession || !fallbackSession.user) {
+            console.error('Not authenticated:', sessionError)
+            router.push('/login')
+            return
+          }
+          
+          currentUser = fallbackSession.user
+          console.log('Current user ID (fallback):', currentUser.id)
+          console.log('Current user email (fallback):', currentUser.email)
+        } else {
+          currentUser = session.user
+          console.log('Current user ID (refreshed):', currentUser.id)
+          console.log('Current user email (refreshed):', currentUser.email)
         }
-
-        console.log('Current user ID:', user.id)
 
         // Fetch user profile
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', user.id)
+          .eq('id', currentUser.id)
           .single()
 
         if (profileError) {
@@ -265,26 +437,81 @@ export default {
         }
 
         userProfile.value = profile
+        
+        // Populate edit form with current profile data
+        editForm.value = {
+          full_name: profile.full_name || '',
+          contact_number: profile.contact_number || '',
+          college_department: profile.college_department || '',
+          program: profile.program || '',
+          year_section: profile.year_section || '',
+          sex: profile.sex || '',
+          type: profile.type || 'Student'
+        }
 
-        // Fetch consultation history
-        const { data: consultationData, error: consultationError } = await supabase
-          .from('consultations')
-          .select(`
-            *,
-            attended_by_profile:profiles!consultations_attended_by_fkey(full_name)
-          `)
-          .eq('student_id', user.id)
-          .order('consultation_date', { ascending: false })
+        // Find patient record by matching FULL NAME (primary match)
+        // This allows linking consultations even if created before account existed
+        console.log('Looking up patient record for name:', profile.full_name)
+        
+        let patientRecord = null
+        let patientError = null
+        
+        // Strategy 1: Try exact full name match (case-insensitive)
+        const { data: nameMatch, error: nameError } = await supabase
+          .from('patients')
+          .select('id, full_name, school_id')
+          .ilike('full_name', profile.full_name)
+          .limit(1)
+          .single()
 
-        if (consultationError) {
-          console.error('Error fetching consultations:', consultationError)
-          // Don't throw - consultations might not exist yet
+        if (!nameError && nameMatch) {
+          patientRecord = nameMatch
+          console.log('✅ Found patient by exact name match:', patientRecord)
         } else {
-          consultations.value = consultationData.map(c => ({
-            ...c,
-            attended_by_name: c.attended_by_profile?.full_name || 'Clinic Staff'
-          }))
-          console.log(`Loaded ${consultations.value.length} consultations`)
+          // Strategy 2: Fallback to school_id match if available
+          if (profile.school_id) {
+            console.log('Name match failed, trying school_id:', profile.school_id)
+            const { data: idMatch, error: idError } = await supabase
+              .from('patients')
+              .select('id, full_name, school_id')
+              .eq('school_id', profile.school_id)
+              .single()
+            
+            if (!idError && idMatch) {
+              patientRecord = idMatch
+              console.log('✅ Found patient by school_id match:', patientRecord)
+            } else {
+              patientError = idError
+            }
+          } else {
+            patientError = nameError
+          }
+        }
+
+        if (!patientRecord) {
+          console.warn('No patient record found for:', profile.full_name)
+          console.warn('Error:', patientError)
+          consultations.value = []
+        } else {
+          console.log('📋 Using patient record:', patientRecord)
+          
+          // Fetch consultation history using patient ID
+          const { data: consultationData, error: consultationError } = await supabase
+            .from('consultations')
+            .select('*')
+            .eq('student_id', patientRecord.id)
+            .order('consultation_date', { ascending: false })
+
+          if (consultationError) {
+            console.error('Error fetching consultations:', consultationError)
+            consultations.value = []
+          } else {
+            consultations.value = consultationData.map(c => ({
+              ...c,
+              attended_by_name: c.attended_by_name || 'Clinic Staff'
+            }))
+            console.log(`✅ Loaded ${consultations.value.length} consultations for ${patientRecord.full_name}`)
+          }
         }
 
       } catch (err) {
@@ -319,8 +546,62 @@ export default {
         router.push('/login')
       } catch (err) {
         console.error('Logout error:', err)
-        alert(`Failed to logout: ${err.message}`)
+        showNotificationModal(`Failed to logout: ${err.message}`, 'error')
       }
+    }
+    
+    const saveProfile = async () => {
+      try {
+        isSaving.value = true
+        
+        // Validate contact number (11 digits)
+        if (editForm.value.contact_number && !/^[0-9]{11}$/.test(editForm.value.contact_number)) {
+          showNotificationModal('Contact number must be 11 digits', 'error')
+          return
+        }
+        
+        // Get current session
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.user) {
+          showNotificationModal('Not authenticated', 'error')
+          return
+        }
+        
+        // Update profile in database
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            full_name: editForm.value.full_name,
+            contact_number: editForm.value.contact_number,
+            college_department: editForm.value.college_department,
+            program: editForm.value.program,
+            year_section: editForm.value.year_section,
+            sex: editForm.value.sex,
+            type: editForm.value.type,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', session.user.id)
+        
+        if (error) throw error
+        
+        // Refresh profile data
+        await fetchStudentData()
+        
+        showNotificationModal('Profile updated successfully!', 'success')
+        showEditModal.value = false
+        
+      } catch (err) {
+        console.error('Error updating profile:', err)
+        showNotificationModal(`Failed to update profile: ${err.message}`, 'error')
+      } finally {
+        isSaving.value = false
+      }
+    }
+    
+    const showNotificationModal = (message, type = 'info') => {
+      notificationMessage.value = message
+      notificationType.value = type
+      showNotification.value = true
     }
 
     // Load data on mount
@@ -339,7 +620,15 @@ export default {
       pageSubtitle,
       fetchStudentData,
       formatDate,
-      handleLogout
+      handleLogout,
+      showNotification,
+      notificationMessage,
+      notificationType,
+      showNotificationModal,
+      showEditModal,
+      editForm,
+      isSaving,
+      saveProfile
     }
   }
 }
@@ -696,7 +985,7 @@ export default {
 
 .consultations-list {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 16px;
 }
 
@@ -778,12 +1067,37 @@ export default {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .attended-by {
   font-size: 13px;
   color: #64748b;
   font-style: italic;
+}
+
+.follow-up {
+  font-size: 12px;
+  color: #f59e0b;
+  font-weight: 600;
+  padding: 4px 8px;
+  background: #fef3c7;
+  border-radius: 6px;
+}
+
+.quantity-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 4px 10px;
+  background: #dbeafe;
+  color: #1e40af;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* Status badges in consultation */
@@ -805,6 +1119,195 @@ export default {
 .status-badge.in.progress {
   background: #3b82f6;
   color: white;
+}
+
+/* Edit Profile Button */
+.edit-profile-btn {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #01820a 0%, #00a838 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  margin-left: auto;
+}
+
+.edit-profile-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.edit-profile-btn .icon {
+  font-size: 16px;
+}
+
+/* Edit Profile Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 12px;
+  max-width: 700px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-header h2 {
+  font-size: 22px;
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 32px;
+  color: #64748b;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.close-btn:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+/* Profile Form */
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.required {
+  color: #ef4444;
+}
+
+.form-group input,
+.form-group select {
+  padding: 12px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.form-group input::placeholder {
+  color: #9ca3af;
+}
+
+/* Form Actions */
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.btn-cancel,
+.btn-save {
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.btn-cancel {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.btn-cancel:hover {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.btn-save {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.btn-save:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.btn-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Responsive */
@@ -837,6 +1340,28 @@ export default {
 
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-content {
+    margin: 10px;
+    max-height: 95vh;
+  }
+
+  .modal-header {
+    padding: 16px;
+  }
+
+  .modal-body {
+    padding: 16px;
+  }
+
+  .edit-profile-btn {
+    font-size: 12px;
+    padding: 8px 16px;
   }
 }
 </style>

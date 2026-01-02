@@ -37,6 +37,15 @@
           </i>
           <span>Medicine</span>
         </router-link>
+        <router-link to="/consultations" class="nav-item">
+          <i class="icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M19 3H5C3.89543 3 3 3.89543 3 5V19C3 20.1046 3.89543 21 5 21H19C20.1046 21 21 20.1046 21 19V5C21 3.89543 20.1046 3 19 3Z" stroke="currentColor" stroke-width="2" fill="none"/>
+              <path d="M9 7H15M9 12H15M9 17H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </i>
+          <span>Consultations</span>
+        </router-link>
         <router-link to="/transactions" class="nav-item">
           <i class="icon" aria-hidden="true">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -66,8 +75,8 @@
       <header class="header">
         
         <div class="user-profile" @click="showProfileModal = true" style="cursor: pointer;">
-          <img src="@/assets/logo.png" alt="Admin" class="user-avatar" />
-          <span class="user-greeting">Hi, <strong>Admin</strong></span>
+          <img src="@/assets/NurseProfile.jpg" alt="User Avatar" class="user-avatar" />
+          <span class="user-greeting">Hi, <strong>{{ userName }}</strong></span>
         </div>
       </header>
 
@@ -233,6 +242,27 @@ const error = ref(null)
 const globalSearch = ref('')
 const tableSearch = ref('')
 const activeFilter = ref('all')
+const userName = ref('User')
+
+// Fetch user data
+const fetchUserData = async () => {
+  try {
+    const { data: { session }, error: sessionErr } = await supabase.auth.getSession()
+    if (sessionErr) throw sessionErr
+    
+    if (session?.user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', session.user.id)
+        .single()
+        
+      userName.value = profile?.full_name || session.user.email?.split('@')[0] || 'User'
+    }
+  } catch (err) {
+    console.error('Error fetching user data:', err)
+  }
+}
 
 // Fetch all patients
 const fetchPatients = async () => {
@@ -399,7 +429,7 @@ const handleUpdatePatient = async (updatedPatient) => {
     console.log('✅ Update successful, fetching updated data...')
 
     // Then fetch the updated patient data
-    const { data, error: fetchError } = await supabase
+    let { data, error: fetchError } = await supabase
       .from('patients')
       .select('*')
       .eq('id', updatedPatient.id)
@@ -520,6 +550,7 @@ onMounted(async () => {
     router.push('/login')
     return
   }
+  await fetchUserData()
   fetchPatients()
 })
 
@@ -734,9 +765,10 @@ onMounted(async () => {
 
 .user-profile {
   display: flex;
+  justify-content: flex-end;
   align-items: center;
   gap: 12px;
-  margin-left: auto;
+  margin-left: auto; /* push user profile to the right side of the header */
 }
 
 .user-avatar {

@@ -7,6 +7,7 @@ import PatientRecordPage from '../views/PatientRecord.vue'
 import MedicinePage from '../views/Medicine.vue'
 import TransactionsPage from '../views/Transactions.vue'
 import ClinicStaffUsersPage from '../views/ClinicStaffUsers.vue'
+import ConsultationsPage from '../views/Consultations.vue'
 
 
 const routes = [
@@ -48,6 +49,11 @@ const routes = [
     path: '/transactions',
     name: 'Transactions',
     component: TransactionsPage
+  },
+  {
+    path: '/consultations',
+    name: 'Consultations',
+    component: ConsultationsPage
   },
   {
     path: '/staff-users',

@@ -43,7 +43,7 @@
                 >
                   <option value="" disabled>Select department</option>
                   <option value="Male">College of Nursing</option>
-                  <option value="Female">College of Computer Studies</option>
+                  <option value="Female">College of Computer Studies</option> 
                   <option value="Female">College of Education</option>
                   <option value="Female">College of Music</option>
                   <option value="Female">College of Engineering</option>

@@ -1,5 +1,12 @@
 <template>
   <div class="login-container">
+    <!-- Notification Modal -->
+    <NotificationModal 
+      :show="showNotification" 
+      :message="notificationMessage" 
+      :type="notificationType"
+      @close="showNotification = false" />
+    
     <!-- Left side with logo and branding -->
     <div class="left-section">
       <div class="logo-circle">
@@ -96,9 +103,13 @@
 <script>
 // Import Supabase client for authentication
 import { supabase } from '@/lib/Supabase.js'
+import NotificationModal from './NotificationModal.vue'
 
 export default {
   name: 'LoginPage',
+  components: {
+    NotificationModal
+  },
   data() {
     return {
       email: '',
@@ -108,7 +119,10 @@ export default {
       showEmail: false,
       isLoading: false, // Track loading state during login
       errorMessage: '', // Store error messages
-      userProfile: null // Store user profile data after successful login
+      userProfile: null, // Store user profile data after successful login
+      showNotification: false,
+      notificationMessage: '',
+      notificationType: 'info'
     }
   },
   methods: {
@@ -292,11 +306,20 @@ export default {
         // Handle any unexpected errors
         console.error('Unexpected error during login:', error)
         this.errorMessage = `An unexpected error occurred: ${error.message}`
-        alert(this.errorMessage)
+        this.showNotificationModal(this.errorMessage, 'error')
       } finally {
         // Always reset loading state
         this.isLoading = false
       }
+    },
+    
+    /**
+     * Show notification modal
+     */
+    showNotificationModal(message, type = 'info') {
+      this.notificationMessage = message
+      this.notificationType = type
+      this.showNotification = true
     },
     
     /**

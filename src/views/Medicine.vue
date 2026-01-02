@@ -37,6 +37,15 @@
           </i>
           <span>Medicine</span>
         </router-link>
+        <router-link to="/consultations" class="nav-item">
+          <i class="icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M19 3H5C3.89543 3 3 3.89543 3 5V19C3 20.1046 3.89543 21 5 21H19C20.1046 21 21 20.1046 21 19V5C21 3.89543 20.1046 3 19 3Z" stroke="currentColor" stroke-width="2" fill="none"/>
+              <path d="M9 7H15M9 12H15M9 17H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </i>
+          <span>Consultations</span>
+        </router-link>
         <router-link to="/transactions" class="nav-item">
           <i class="icon" aria-hidden="true">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -66,11 +75,18 @@
       <header class="header">
         
         <div class="user-profile" @click="showProfileModal = true" style="cursor: pointer;">
-          <img src="@/assets/NurseProfile.jpg" alt="Admin" class="user-avatar" />
-          <span class="user-greeting">Hi, <strong>Admin</strong></span>
+          <img src="@/assets/NurseProfile.jpg" alt="User Avatar" class="user-avatar" />
+          <span class="user-greeting">Hi, <strong>{{ userName }}</strong></span>
         </div>
       </header>
 
+      <!-- Notification Modal -->
+      <NotificationModal 
+        :show="showNotification" 
+        :message="notificationMessage" 
+        :type="notificationType"
+        @close="showNotification = false" />
+      
       <!-- Profile Modal -->
       <Profile :show="showProfileModal" @close="showProfileModal = false" />
 
@@ -188,13 +204,15 @@ import { supabase } from '../supabaseClient'
 import Profile from '../components/Profile.vue'
 import AddMedicine from '../components/AddMedicine.vue'
 import ViewMedicine from '../components/ViewMedicine.vue'
+import NotificationModal from '../components/NotificationModal.vue'
 
 export default {
   name: 'MedicinePage',
   components: {
     Profile,
     AddMedicine,
-    ViewMedicine
+    ViewMedicine,
+    NotificationModal
   },
   setup() {
     // Reactive state
@@ -207,6 +225,30 @@ export default {
     const medicines = ref([])
     const loading = ref(false)
     const error = ref(null)
+    const showNotification = ref(false)
+    const notificationMessage = ref('')
+    const notificationType = ref('info')
+    const userName = ref('User')
+
+    // Fetch user data
+    const fetchUserData = async () => {
+      try {
+        const { data: { session }, error: sessionErr } = await supabase.auth.getSession()
+        if (sessionErr) throw sessionErr
+        
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', session.user.id)
+            .single()
+            
+          userName.value = profile?.full_name || session.user.email?.split('@')[0] || 'User'
+        }
+      } catch (err) {
+        console.error('Error fetching user data:', err)
+      }
+    }
 
     // 🟢 FETCH MEDICINES FROM SUPABASE
     const getMedicines = async () => {
@@ -231,7 +273,7 @@ export default {
         medicines.value = data
       } catch (err) {
         console.error('❌ Failed to fetch medicines:', err)
-        alert(`Failed to fetch medicines: ${err.message}`)
+        showNotificationModal(`Failed to fetch medicines: ${err.message}`, 'error')
       } finally {
         loading.value = false
       }
@@ -273,10 +315,10 @@ export default {
         // Close modal
         showAddMedicineModal.value = false
         
-        alert(`✅ Medicine "${newMedicine.name}" added successfully!`)
+        showNotificationModal(`Medicine "${newMedicine.name}" added successfully!`, 'success')
       } catch (err) {
         console.error('❌ Failed to add medicine:', err)
-        alert(`Failed to add medicine: ${err.message}`)
+        showNotificationModal(`Failed to add medicine: ${err.message}`, 'error')
       } finally {
         loading.value = false
       }
@@ -324,10 +366,10 @@ export default {
         // Close modal
         closeViewMedicineModal()
         
-        alert(`✅ Medicine "${updatedMedicine.name}" updated successfully!`)
+        showNotificationModal(`Medicine "${updatedMedicine.name}" updated successfully!`, 'success')
       } catch (err) {
         console.error('❌ Failed to update medicine:', err)
-        alert(`Failed to update medicine: ${err.message}`)
+        showNotificationModal(`Failed to update medicine: ${err.message}`, 'error')
       } finally {
         loading.value = false
       }
@@ -354,10 +396,10 @@ export default {
         // Refresh the medicines list
         await getMedicines()
         
-        alert('✅ Medicine deleted successfully!')
+        showNotificationModal('Medicine deleted successfully!', 'success')
       } catch (err) {
         console.error('❌ Failed to delete medicine:', err)
-        alert(`Failed to delete medicine: ${err.message}`)
+        showNotificationModal(`Failed to delete medicine: ${err.message}`, 'error')
       } finally {
         loading.value = false
       }
@@ -393,7 +435,13 @@ export default {
 
     const showValidationError = (message) => {
       console.log('❌ Validation error:', message)
-      alert(`⚠️ ${message}`)
+      showNotificationModal(message, 'warning')
+    }
+    
+    const showNotificationModal = (message, type = 'info') => {
+      notificationMessage.value = message
+      notificationType.value = type
+      showNotification.value = true
     }
 
     // Computed property for filtered medicines
@@ -416,6 +464,7 @@ export default {
     // Fetch medicines on component mount
     onMounted(async () => {
       console.log('=== MEDICINE COMPONENT MOUNTED ===')
+      await fetchUserData()
       await getMedicines()
     })
 
@@ -438,7 +487,11 @@ export default {
       openAddMedicineModal,
       viewMedicine,
       closeViewMedicineModal,
-      showValidationError
+      showValidationError,
+      showNotification,
+      notificationMessage,
+      notificationType,
+      userName
     }
   },
   // Setup-based component - reactive state and computed properties are returned from setup()
@@ -581,9 +634,10 @@ export default {
 
 .user-profile {
   display: flex;
+  justify-content: flex-end;
   align-items: center;
   gap: 12px;
-  margin-left: auto;
+  margin-left: auto; /* push user profile to the right side of the header */
 }
 
 .user-avatar {

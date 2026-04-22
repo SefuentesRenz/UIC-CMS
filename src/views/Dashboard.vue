@@ -130,7 +130,15 @@
 
         <!-- Chart Section -->
         <div class="chart-section">
-          <h2 class="chart-title">{{ chartTitle }}</h2>
+          <div class="chart-header-row">
+            <h2 class="chart-title">{{ chartTitle }}</h2>
+            <div class="year-filter" v-if="availableYears.length > 0">
+              <label for="chartYear">Year:</label>
+              <select id="chartYear" v-model.number="currentYear" @change="handleYearChange">
+                <option v-for="year in availableYears" :key="year" :value="year">{{ year }}</option>
+              </select>
+            </div>
+          </div>
           
           <!-- Tab Navigation -->
           <div class="chart-tabs">
@@ -180,6 +188,8 @@ export default {
     return {
       searchQuery: '',
       activeTab: 'patients',
+      currentYear: new Date().getFullYear(),
+      availableYears: [],
       showProfileModal: false,
       stats: {
         activePatients: 0,
@@ -197,29 +207,34 @@ export default {
         diseases: [],
         medicines: []
       },
-      isDataLoaded: false
+      isDataLoaded: false,
+      realtimeChannel: null,
+      isRefreshing: false,
+      refreshIntervalId: null
     }
   },
   computed: {
+    chartLabels() {
+      return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    },
     chartTitle() {
-      const currentYear = new Date().getFullYear()
-      
       switch (this.activeTab) {
         case 'patients':
-          return `No. Of Patients Per Month In Year ${currentYear}`
+          return `No. Of Patients Per Month In Year ${this.currentYear}`
         case 'diseases':
-          return `No. Of Diseases Per Month In Year ${currentYear}`
+          return `No. Of Diseases Per Month In Year ${this.currentYear}`
         case 'medicines':
-          return `No. Of Medicines Dispensed Per Month In Year ${currentYear}`
+          return `No. Of Medicines Dispensed Per Month In Year ${this.currentYear}`
         default:
-          return `Statistics For Year ${currentYear}`
+          return `Statistics For Year ${this.currentYear}`
       }
     }
   },
   async created() {
     await this.fetchUserData()
-    await this.fetchStats()
-    await this.fetchChartData()
+    await this.fetchAvailableYears()
+    await this.refreshDashboardData()
+    this.setupRealtimeUpdates()
     this.isDataLoaded = true
   },
   mounted() {
@@ -234,6 +249,16 @@ export default {
       this.chart.destroy()
       this.chart = null
     }
+    if (this.realtimeChannel) {
+      supabase.removeChannel(this.realtimeChannel)
+      this.realtimeChannel = null
+    }
+    if (this.refreshIntervalId) {
+      clearInterval(this.refreshIntervalId)
+      this.refreshIntervalId = null
+    }
+    window.removeEventListener('focus', this.handleWindowFocus)
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange)
   },
   watch: {
   activeTab(newTab, oldTab) {
@@ -252,6 +277,66 @@ export default {
   }
 },
   methods: {
+    async refreshDashboardData() {
+      if (this.isRefreshing) return
+
+      this.isRefreshing = true
+      try {
+        await this.fetchAvailableYears()
+        if (!this.availableYears.includes(this.currentYear)) {
+          this.currentYear = this.availableYears[0] || new Date().getFullYear()
+        }
+
+        await Promise.all([this.fetchStats(), this.fetchChartData()])
+
+        if (this.chart) {
+          this.updateChartForTab(this.activeTab)
+        }
+      } finally {
+        this.isRefreshing = false
+      }
+    },
+
+    setupRealtimeUpdates() {
+      if (this.realtimeChannel) {
+        supabase.removeChannel(this.realtimeChannel)
+      }
+
+      this.realtimeChannel = supabase
+        .channel('dashboard-live-updates')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'patients' },
+          async () => {
+            await this.refreshDashboardData()
+          }
+        )
+        .subscribe()
+
+      this.refreshIntervalId = setInterval(() => {
+        this.refreshDashboardData()
+      }, 30000)
+
+      window.addEventListener('focus', this.handleWindowFocus)
+      document.addEventListener('visibilitychange', this.handleVisibilityChange)
+    },
+
+    async handleWindowFocus() {
+      await this.refreshDashboardData()
+    },
+
+    async handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        await this.refreshDashboardData()
+      }
+    },
+
+    getYearRangeIso(year) {
+      const start = new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0)).toISOString()
+      const end = new Date(Date.UTC(year + 1, 0, 1, 0, 0, 0, 0)).toISOString()
+      return { start, end }
+    },
+
     async fetchUserData() {
       try {
         const { data: { session }, error: sessionErr } = await supabase.auth.getSession()
@@ -301,36 +386,117 @@ export default {
     
     async fetchChartData() {
       try {
-        const currentYear = 2025
-        await this.fetchPatientsData(currentYear)
-        await this.fetchDiseasesData(currentYear)
-        await this.fetchMedicinesData(currentYear)
+        await this.fetchPatientsData(this.currentYear)
+        await this.fetchDiseasesData(this.currentYear)
+        await this.fetchMedicinesData(this.currentYear)
       } catch (err) {
         console.error('Error fetching chart data:', err)
       }
     },
-    
+
+    async handleYearChange() {
+      await this.fetchChartData()
+      if (this.chart) {
+        this.updateChartForTab(this.activeTab)
+      }
+    },
+
+    extractYearFromDate(dateValue) {
+      const date = new Date(dateValue)
+      if (Number.isNaN(date.getTime())) return null
+      return date.getUTCFullYear()
+    },
+
+    async fetchDistinctYearsFromTable(tableName, dateColumn) {
+      const years = new Set()
+      const pageSize = 1000
+      let from = 0
+
+      while (true) {
+        const to = from + pageSize - 1
+        const { data, error } = await supabase
+          .from(tableName)
+          .select(dateColumn)
+          .order(dateColumn, { ascending: false })
+          .range(from, to)
+
+        if (error) throw error
+
+        const rows = data || []
+        rows.forEach((row) => {
+          const year = this.extractYearFromDate(row[dateColumn])
+          if (year) years.add(year)
+        })
+
+        if (rows.length < pageSize) {
+          break
+        }
+
+        from += pageSize
+      }
+
+      return years
+    },
+
+    async fetchAvailableYears() {
+      try {
+        const [patientYears, consultationYears, medicineYears, transactionYears] = await Promise.all([
+          this.fetchDistinctYearsFromTable('patients', 'created_at'),
+          this.fetchDistinctYearsFromTable('consultations', 'consultation_date'),
+          this.fetchDistinctYearsFromTable('medicine', 'created_at'),
+          this.fetchDistinctYearsFromTable('transactions', 'created_at')
+        ])
+
+        const mergedYears = new Set([
+          ...patientYears,
+          ...consultationYears,
+          ...medicineYears,
+          ...transactionYears,
+          new Date().getFullYear()
+        ])
+
+        this.availableYears = Array.from(mergedYears).sort((a, b) => b - a)
+      } catch (err) {
+        console.error('Error loading chart years:', err)
+        this.availableYears = [new Date().getFullYear()]
+      }
+    },
+
+    normalizePatientType(rawType) {
+      const normalized = (rawType || '').trim().toLowerCase()
+
+      if (normalized.startsWith('student')) return 'student'
+      if (normalized.startsWith('faculty')) return 'faculty'
+      if (normalized.startsWith('staff') || normalized.startsWith('nurse')) return 'staff'
+
+      return null
+    },
+
     async fetchPatientsData(year) {
       try {
         const studentCounts = [0,0,0,0,0,0,0,0,0,0,0,0]
         const facultyCounts = [0,0,0,0,0,0,0,0,0,0,0,0]
         const staffCounts = [0,0,0,0,0,0,0,0,0,0,0,0]
-        
+        const { start, end } = this.getYearRangeIso(year)
+
         const { data: patients, error } = await supabase
           .from('patients')
           .select('created_at, type')
-          .gte('created_at', `${year}-01-01`)
-          .lt('created_at', `${year + 1}-01-01`)
-        
+          .gte('created_at', start)
+          .lt('created_at', end)
+
         if (error) throw error
         
         patients?.forEach(patient => {
-          const month = new Date(patient.created_at).getMonth()
-          const type = patient.type?.toLowerCase()
+          const createdAt = new Date(patient.created_at)
+          if (Number.isNaN(createdAt.getTime())) return
+
+          const month = createdAt.getUTCMonth()
+          const type = this.normalizePatientType(patient.type)
           
           if (type === 'student') studentCounts[month]++
           else if (type === 'faculty') facultyCounts[month]++
-          else if (type === 'staff' || type === 'nurse') staffCounts[month]++
+          else if (type === 'staff') staffCounts[month]++
         })
         
         this.chartData.students = studentCounts
@@ -348,12 +514,13 @@ export default {
   try {
     const diseaseCounts = {}
     const monthlyData = {}
+        const { start, end } = this.getYearRangeIso(year)
     
     const { data: consultations, error } = await supabase
       .from('consultations')
       .select('consultation_date, diagnosis')
-      .gte('consultation_date', `${year}-01-01`)
-      .lt('consultation_date', `${year + 1}-01-01`)
+          .gte('consultation_date', start)
+          .lt('consultation_date', end)
     
     if (error) throw error
     
@@ -370,7 +537,10 @@ export default {
     consultations?.forEach(consultation => {
       if (!consultation.diagnosis || consultation.diagnosis.trim() === '') return
       
-      const month = new Date(consultation.consultation_date).getMonth()
+      const consultDate = new Date(consultation.consultation_date)
+      if (Number.isNaN(consultDate.getTime())) return
+
+      const month = consultDate.getUTCMonth()
       const diagnosis = consultation.diagnosis.trim()
       
       if (!monthlyData[diagnosis]) {
@@ -411,14 +581,15 @@ async fetchMedicinesData(year) {
   try {
     const medicineCounts = {}
     const monthlyData = {}
+    const { start, end } = this.getYearRangeIso(year)
     
     // Option 1: Get all transactions and check description/notes for medicine names
     const { data: transactions, error: transError } = await supabase
       .from('transactions')
       .select('*')
       .eq('type', 'Dispensed')
-      .gte('created_at', `${year}-01-01`)
-      .lt('created_at', `${year + 1}-01-01`)
+      .gte('created_at', start)
+      .lt('created_at', end)
     
     if (transError) {
       console.error('Transaction error:', transError)
@@ -429,8 +600,8 @@ async fetchMedicinesData(year) {
       const { data: medicines, error: medError } = await supabase
         .from('medicine')
         .select('id, name, created_at')
-        .gte('created_at', `${year}-01-01`)
-        .lt('created_at', `${year + 1}-01-01`)
+        .gte('created_at', start)
+        .lt('created_at', end)
       
       if (medError) throw medError
       
@@ -444,7 +615,10 @@ async fetchMedicinesData(year) {
       }
       
       medicines?.forEach(medicine => {
-        const month = new Date(medicine.created_at).getMonth()
+        const createdAt = new Date(medicine.created_at)
+        if (Number.isNaN(createdAt.getTime())) return
+
+        const month = createdAt.getUTCMonth()
         const medicineName = medicine.name?.trim() || 'Unknown'
         
         if (!monthlyData[medicineName]) {
@@ -465,7 +639,10 @@ async fetchMedicinesData(year) {
       }
       
       transactions?.forEach(transaction => {
-        const month = new Date(transaction.created_at).getMonth()
+        const createdAt = new Date(transaction.created_at)
+        if (Number.isNaN(createdAt.getTime())) return
+
+        const month = createdAt.getUTCMonth()
         
         // Extract medicine name from description or notes
         let medicineName = 'Unknown Medicine'
@@ -601,7 +778,7 @@ async fetchMedicinesData(year) {
     this.chart = new Chart(ctx, {
       type: 'line',
       data: {
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+        labels: this.chartLabels,
         datasets: datasets
       },
       options: {
@@ -647,7 +824,7 @@ async fetchMedicinesData(year) {
       this.chart = new Chart(ctx, {
         type: 'line',
         data: {
-          labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+            labels: this.chartLabels,
           datasets: [
             {
               label: 'Students',
@@ -964,11 +1141,41 @@ async fetchMedicinesData(year) {
   border: 1px solid #f0f0f0;
 }
 
+.chart-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
 .chart-title {
   font-size: 16px;
   color: #1e293b;
-  margin-bottom: 14px;
+  margin-bottom: 0;
   font-weight: 600;
+}
+
+.year-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.year-filter select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #111827;
+}
+
+.year-filter select:focus {
+  outline: none;
+  border-color: #ec4899;
+  box-shadow: 0 0 0 3px rgba(236, 72, 153, 0.15);
 }
 
 .chart-tabs {
@@ -1120,6 +1327,11 @@ async fetchMedicinesData(year) {
 
   .chart-section {
     padding: 20px;
+  }
+
+  .chart-header-row {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

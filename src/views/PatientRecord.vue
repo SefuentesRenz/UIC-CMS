@@ -545,8 +545,9 @@ const addPatient = () => {
 // Initialize
 // Check authentication on mount
 onMounted(async () => {
+  const isDemoMode = sessionStorage.getItem('uic_demo_mode') === '1'
   const { data: { session } } = await supabase.auth.getSession()
-  if (!session) {
+  if (!session && !isDemoMode) {
     router.push('/login')
     return
   }
